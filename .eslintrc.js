@@ -14,12 +14,31 @@
  * limitations under the License.
  */
 
-var path = require('path');
+var path = require('node:path');
 
 module.exports = {
   root: true,
-  plugins: ['@spotify', 'notice', 'react', 'testing-library'],
+  plugins: ['@spotify', 'notice', 'react', 'testing-library', '@backstage', 'node-import'],
   rules: {
+    'node-import/prefer-node-protocol': 1,
+    '@backstage/no-mixed-plugin-imports': [
+      'error',
+      {
+        // TODO: Fix these either by right role or by moving things to new packages
+        excludedTargetPackages: [
+          '@backstage/plugin-catalog',
+          '@backstage/plugin-techdocs',
+          '@backstage/plugin-app',
+          '@backstage/plugin-catalog-backend',
+          '@backstage/test-utils',
+          '@backstage/plugin-auth-backend',
+          '@backstage/plugin-permission-backend',
+          '@backstage/plugin-kubernetes-backend',
+          '@backstage/config-loader',
+          '@backstage/plugin-app-backend'
+        ],
+      }
+    ],
     'react/react-in-jsx-scope': 'off',
     'notice/notice': [
       'error',

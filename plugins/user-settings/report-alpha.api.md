@@ -5,27 +5,30 @@
 ```ts
 import { AnyRouteRefParams } from '@backstage/frontend-plugin-api';
 import { ConfigurableExtensionDataRef } from '@backstage/frontend-plugin-api';
-import { ExtensionDefinition } from '@backstage/frontend-plugin-api';
+import { ExtensionDataRef } from '@backstage/frontend-plugin-api';
 import { ExtensionInput } from '@backstage/frontend-plugin-api';
-import { FrontendPlugin } from '@backstage/frontend-plugin-api';
-import { IconComponent } from '@backstage/core-plugin-api';
+import { IconComponent } from '@backstage/frontend-plugin-api';
+import { IconElement } from '@backstage/frontend-plugin-api';
 import { JSX as JSX_2 } from 'react';
+import { OverridableExtensionDefinition } from '@backstage/frontend-plugin-api';
+import { OverridableFrontendPlugin } from '@backstage/frontend-plugin-api';
 import { RouteRef } from '@backstage/frontend-plugin-api';
-import { TranslationRef } from '@backstage/core-plugin-api/alpha';
+import { RouteRef as RouteRef_2 } from '@backstage/core-plugin-api';
+import { TranslationRef } from '@backstage/frontend-plugin-api';
 
 // @alpha (undocumented)
-const _default: FrontendPlugin<
+const _default: OverridableFrontendPlugin<
   {
-    root: RouteRef<undefined>;
+    root: RouteRef_2<undefined>;
   },
   {},
   {
-    'nav-item:user-settings': ExtensionDefinition<{
+    'nav-item:user-settings': OverridableExtensionDefinition<{
       kind: 'nav-item';
       name: undefined;
       config: {};
       configInput: {};
-      output: ConfigurableExtensionDataRef<
+      output: ExtensionDataRef<
         {
           title: string;
           icon: IconComponent;
@@ -41,38 +44,89 @@ const _default: FrontendPlugin<
         routeRef: RouteRef<undefined>;
       };
     }>;
-    'page:user-settings': ExtensionDefinition<{
+    'page:user-settings': OverridableExtensionDefinition<{
       config: {
         path: string | undefined;
+        title: string | undefined;
       };
       configInput: {
+        title?: string | undefined;
         path?: string | undefined;
       };
       output:
-        | ConfigurableExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
-        | ConfigurableExtensionDataRef<string, 'core.routing.path', {}>
-        | ConfigurableExtensionDataRef<
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
             RouteRef<AnyRouteRefParams>,
             'core.routing.ref',
             {
               optional: true;
             }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<
+            string,
+            'core.title',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
           >;
       inputs: {
+        pages: ExtensionInput<
+          | ConfigurableExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+          | ConfigurableExtensionDataRef<string, 'core.routing.path', {}>
+          | ConfigurableExtensionDataRef<
+              RouteRef<AnyRouteRefParams>,
+              'core.routing.ref',
+              {
+                optional: true;
+              }
+            >
+          | ConfigurableExtensionDataRef<
+              string,
+              'core.title',
+              {
+                optional: true;
+              }
+            >
+          | ConfigurableExtensionDataRef<
+              IconElement,
+              'core.icon',
+              {
+                optional: true;
+              }
+            >,
+          {
+            singleton: false;
+            optional: false;
+            internal: false;
+          }
+        >;
         providerSettings: ExtensionInput<
           ConfigurableExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>,
           {
             singleton: true;
             optional: true;
+            internal: false;
           }
         >;
       };
       kind: 'page';
       name: undefined;
       params: {
-        defaultPath: string;
-        loader: () => Promise<JSX.Element>;
+        defaultPath?: [Error: `Use the 'path' param instead`];
+        path: string;
+        title?: string;
+        icon?: IconElement;
+        loader?: () => Promise<JSX_2.Element>;
         routeRef?: RouteRef;
+        noHeader?: boolean;
       };
     }>;
   }
@@ -80,12 +134,12 @@ const _default: FrontendPlugin<
 export default _default;
 
 // @alpha (undocumented)
-export const settingsNavItem: ExtensionDefinition<{
+export const settingsNavItem: OverridableExtensionDefinition<{
   kind: 'nav-item';
   name: undefined;
   config: {};
   configInput: {};
-  output: ConfigurableExtensionDataRef<
+  output: ExtensionDataRef<
     {
       title: string;
       icon: IconComponent;
@@ -121,7 +175,7 @@ export const userSettingsTranslationRef: TranslationRef<
     readonly 'languageToggle.select': 'Select language {{language}}';
     readonly 'languageToggle.title': 'Language';
     readonly 'languageToggle.description': 'Change the language';
-    readonly 'themeToggle.select': 'Select theme {{theme}}';
+    readonly 'themeToggle.select': 'Select {{theme}}';
     readonly 'themeToggle.title': 'Theme';
     readonly 'themeToggle.description': 'Change the theme mode';
     readonly 'themeToggle.names.auto': 'Auto';
@@ -144,10 +198,10 @@ export const userSettingsTranslationRef: TranslationRef<
     readonly 'emptyProviders.action.title': 'Open app-config.yaml and make the changes as highlighted below:';
     readonly 'emptyProviders.action.readMoreButtonTitle': 'Read More';
     readonly 'emptyProviders.description': 'You can add Authentication Providers to Backstage which allows you to use these providers to authenticate yourself.';
-    readonly 'providerSettingsItem.title.signIn': 'Sign in to {{title}}';
     readonly 'providerSettingsItem.title.signOut': 'Sign out from {{title}}';
-    readonly 'providerSettingsItem.buttonTitle.signIn': 'Sign in';
+    readonly 'providerSettingsItem.title.signIn': 'Sign in to {{title}}';
     readonly 'providerSettingsItem.buttonTitle.signOut': 'Sign out';
+    readonly 'providerSettingsItem.buttonTitle.signIn': 'Sign in';
     readonly 'authProviders.title': 'Available Providers';
     readonly 'defaultSettingsPage.tabsTitle.featureFlags': 'Feature Flags';
     readonly 'defaultSettingsPage.tabsTitle.authProviders': 'Authentication Providers';

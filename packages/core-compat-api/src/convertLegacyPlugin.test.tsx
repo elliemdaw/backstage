@@ -40,10 +40,13 @@ describe('convertLegacyPlugin', () => {
         "externalRoutes": {},
         "featureFlags": [],
         "getExtension": [Function],
+        "icon": undefined,
         "id": "test",
         "info": [Function],
         "infoOptions": undefined,
+        "pluginId": "test",
         "routes": {},
+        "title": undefined,
         "toString": [Function],
         "version": "v1",
         "withOverrides": [Function],
@@ -70,7 +73,7 @@ describe('convertLegacyPlugin', () => {
       {
         extensions: [
           PageBlueprint.make({
-            params: { defaultPath: '/test', loader: async () => ({} as any) },
+            params: { path: '/test', loader: async () => ({} as any) },
           }),
         ],
       },

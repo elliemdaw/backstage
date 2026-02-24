@@ -17,9 +17,9 @@
 import { Entity, getEntitySourceLocation } from '@backstage/catalog-model';
 import { ConfigReader } from '@backstage/config';
 import { ScmIntegrations } from '@backstage/integration';
-import os from 'os';
-import path from 'path';
-import { Readable } from 'stream';
+import os from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
 import { TECHDOCS_ANNOTATION } from '@backstage/plugin-techdocs-common';
 import {
   getDocFilesFromRepository,
@@ -113,9 +113,12 @@ describe('parseReferenceAnnotation', () => {
   });
 
   it('should throw error without annotation', () => {
+    const logMsgRegex = new RegExp(
+      `No ${TECHDOCS_ANNOTATION} annotation provided`,
+    );
     expect(() => {
       parseReferenceAnnotation(TECHDOCS_ANNOTATION, entityBase);
-    }).toThrow(/No location annotation/);
+    }).toThrow(logMsgRegex);
   });
 
   it('should throw error with bad annotation', () => {

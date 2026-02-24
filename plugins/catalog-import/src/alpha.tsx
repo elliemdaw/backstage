@@ -16,14 +16,9 @@
 
 import {
   configApiRef,
-  createApiFactory,
   discoveryApiRef,
   fetchApiRef,
 } from '@backstage/core-plugin-api';
-import {
-  compatWrapper,
-  convertLegacyRouteRef,
-} from '@backstage/core-compat-api';
 import {
   createFrontendPlugin,
   PageBlueprint,
@@ -36,6 +31,8 @@ import {
 import { CatalogImportClient, catalogImportApiRef } from './api';
 import { rootRouteRef } from './plugin';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { RequirePermission } from '@backstage/plugin-permission-react';
+import { catalogEntityCreatePermission } from '@backstage/plugin-catalog-common/alpha';
 
 export * from './translation';
 
@@ -43,18 +40,20 @@ export * from './translation';
 //       whether this type of override is typically done with an input or by overriding the entire extension.
 const catalogImportPage = PageBlueprint.make({
   params: {
-    defaultPath: '/catalog-import',
-    routeRef: convertLegacyRouteRef(rootRouteRef),
+    path: '/catalog-import',
+    routeRef: rootRouteRef,
     loader: () =>
-      import('./components/ImportPage').then(m =>
-        compatWrapper(<m.ImportPage />),
-      ),
+      import('./components/ImportPage').then(m => (
+        <RequirePermission permission={catalogEntityCreatePermission}>
+          <m.ImportPage />
+        </RequirePermission>
+      )),
   },
 });
 
 const catalogImportApi = ApiBlueprint.make({
-  params: {
-    factory: createApiFactory({
+  params: defineParams =>
+    defineParams({
       api: catalogImportApiRef,
       deps: {
         discoveryApi: discoveryApiRef,
@@ -81,7 +80,6 @@ const catalogImportApi = ApiBlueprint.make({
           configApi,
         }),
     }),
-  },
 });
 
 /** @alpha */
@@ -90,7 +88,7 @@ export default createFrontendPlugin({
   info: { packageJson: () => import('../package.json') },
   extensions: [catalogImportApi, catalogImportPage],
   routes: {
-    importPage: convertLegacyRouteRef(rootRouteRef),
+    importPage: rootRouteRef,
   },
 });
 

@@ -28,19 +28,29 @@ import { LocationInput, LocationService, LocationStore } from './types';
 import { locationSpecToMetadataName } from '../util/conversion';
 import { InputError } from '@backstage/errors';
 import { DeferredEntity } from '@backstage/plugin-catalog-node';
+import { FilterPredicate } from '@backstage/filter-predicates';
+import { BackstageCredentials } from '@backstage/backend-plugin-api';
 
 export type DefaultLocationServiceOptions = {
   allowedLocationTypes: string[];
 };
 
 export class DefaultLocationService implements LocationService {
+  private readonly store: LocationStore;
+  private readonly orchestrator: CatalogProcessingOrchestrator;
+  private readonly options: DefaultLocationServiceOptions;
+
   constructor(
-    private readonly store: LocationStore,
-    private readonly orchestrator: CatalogProcessingOrchestrator,
-    private readonly options: DefaultLocationServiceOptions = {
+    store: LocationStore,
+    orchestrator: CatalogProcessingOrchestrator,
+    options: DefaultLocationServiceOptions = {
       allowedLocationTypes: ['url'],
     },
-  ) {}
+  ) {
+    this.store = store;
+    this.orchestrator = orchestrator;
+    this.options = options;
+  }
 
   async createLocation(
     input: LocationInput,
@@ -63,6 +73,20 @@ export class DefaultLocationService implements LocationService {
   listLocations(): Promise<Location[]> {
     return this.store.listLocations();
   }
+
+  async queryLocations(options: {
+    limit: number;
+    afterId?: string;
+    query?: FilterPredicate;
+    credentials: BackstageCredentials;
+  }): Promise<{ items: Location[]; totalItems: number }> {
+    return this.store.queryLocations({
+      limit: options.limit,
+      afterId: options.afterId,
+      query: options.query,
+    });
+  }
+
   getLocation(id: string): Promise<Location> {
     return this.store.getLocation(id);
   }

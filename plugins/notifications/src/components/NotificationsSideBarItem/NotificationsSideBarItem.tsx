@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNotificationsApi } from '../../hooks';
 import { Link, SidebarItem } from '@backstage/core-components';
 import NotificationsIcon from '@material-ui/icons/Notifications';
@@ -27,6 +27,7 @@ import { rootRouteRef } from '../../routes';
 import { useSignal } from '@backstage/plugin-signals-react';
 import {
   Notification,
+  NotificationSeverity,
   NotificationSignal,
 } from '@backstage/plugin-notifications-common';
 import { useWebNotifications } from '../../hooks/useWebNotifications';
@@ -79,18 +80,68 @@ declare module 'notistack' {
   }
 }
 
-/** @public */
-export const NotificationsSidebarItem = (props?: {
+/**
+ * @public
+ */
+export type NotificationSnackbarProperties = {
+  enabled?: boolean;
+  autoHideDuration?: number | null;
+  anchorOrigin?: {
+    vertical: 'top' | 'bottom';
+    horizontal: 'left' | 'center' | 'right';
+  };
+  dense?: boolean;
+  maxSnack?: number;
+  snackStyle?: React.CSSProperties;
+  iconVariant?: Partial<Record<NotificationSeverity, React.ReactNode>>;
+  Components?: {
+    [key in NotificationSeverity]: React.JSXElementConstructor<any>;
+  };
+};
+
+/**
+ * Props passed to the custom renderItem function
+ * @public
+ */
+export type NotificationsRenderItemProps = {
+  /** Current unread notification count */
+  unreadCount: number;
+  /** Route path to the notifications page */
+  to: string;
+  /** Click handler that requests web notification permission */
+  onClick: () => void;
+};
+
+/**
+ * @public
+ */
+export type NotificationsSideBarItemProps = {
   webNotificationsEnabled?: boolean;
   titleCounterEnabled?: boolean;
+  /**
+   * @deprecated Use `snackbarProps` instead.
+   */
   snackbarEnabled?: boolean;
+  /**
+   * @deprecated Use `snackbarProps` instead.
+   */
   snackbarAutoHideDuration?: number | null;
+  snackbarProps?: NotificationSnackbarProperties;
   className?: string;
   icon?: IconComponent;
   text?: string;
   disableHighlight?: boolean;
   noTrack?: boolean;
-}) => {
+  /**
+   * Optional render function to provide custom UI instead of the default SidebarItem.
+   */
+  renderItem?: (props: NotificationsRenderItemProps) => React.ReactNode;
+};
+
+/** @public */
+export const NotificationsSidebarItem = (
+  props?: NotificationsSideBarItemProps,
+) => {
   const {
     webNotificationsEnabled = false,
     titleCounterEnabled = true,
@@ -102,9 +153,20 @@ export const NotificationsSidebarItem = (props?: {
   } = props ?? {
     webNotificationsEnabled: false,
     titleCounterEnabled: true,
-    snackbarEnabled: true,
-    snackbarAutoHideDuration: 10000,
+    snackbarProps: {
+      enabled: true,
+      autoHideDuration: 10000,
+    },
   };
+
+  const snackbarProps = useMemo(
+    () =>
+      props?.snackbarProps ?? {
+        enabled: snackbarEnabled,
+        autoHideDuration: snackbarAutoHideDuration,
+      },
+    [props?.snackbarProps, snackbarAutoHideDuration, snackbarEnabled],
+  );
 
   const { loading, error, value, retry } = useNotificationsApi(api =>
     api.getStatus(),
@@ -185,7 +247,7 @@ export const NotificationsSidebarItem = (props?: {
   useEffect(() => {
     const handleNotificationSignal = (signal: NotificationSignal) => {
       if (
-        (!webNotificationsEnabled && !snackbarEnabled) ||
+        (!webNotificationsEnabled && !snackbarProps.enabled) ||
         signal.action !== 'new_notification'
       ) {
         return;
@@ -204,7 +266,7 @@ export const NotificationsSidebarItem = (props?: {
               link: notification.payload.link,
             });
           }
-          if (snackbarEnabled) {
+          if (snackbarProps.enabled) {
             const { action } = getSnackbarProperties(notification);
             const snackBarText =
               notification.payload.title.length > 50
@@ -212,10 +274,14 @@ export const NotificationsSidebarItem = (props?: {
                 : notification.payload.title;
             enqueueSnackbar(snackBarText, {
               key: notification.id,
+              style: snackbarProps.snackStyle,
               variant: notification.payload.severity,
-              anchorOrigin: { vertical: 'bottom', horizontal: 'right' },
+              anchorOrigin: snackbarProps.anchorOrigin ?? {
+                vertical: 'bottom',
+                horizontal: 'right',
+              },
               action,
-              autoHideDuration: snackbarAutoHideDuration,
+              autoHideDuration: snackbarProps.autoHideDuration,
             } as OptionsWithExtraProps<VariantType>);
           }
         })
@@ -235,11 +301,10 @@ export const NotificationsSidebarItem = (props?: {
     lastSignal,
     sendWebNotification,
     webNotificationsEnabled,
-    snackbarEnabled,
-    snackbarAutoHideDuration,
     notificationsApi,
     alertApi,
     getSnackbarProperties,
+    snackbarProps,
   ]);
 
   useEffect(() => {
@@ -256,35 +321,65 @@ export const NotificationsSidebarItem = (props?: {
 
   const count = !error && !!unreadCount ? unreadCount : undefined;
 
+  const handleClick = useCallback(() => {
+    requestUserPermission();
+  }, [requestUserPermission]);
+
+  // Props to pass to custom renderItem function
+  const renderItemProps: NotificationsRenderItemProps = useMemo(
+    () => ({
+      unreadCount,
+      to: notificationsRoute,
+      onClick: handleClick,
+    }),
+    [unreadCount, notificationsRoute, handleClick],
+  );
+
   return (
     <>
       {snackbarEnabled && (
         <SnackbarProvider
           iconVariant={{
-            normal: <SeverityIcon severity="normal" />,
-            critical: <SeverityIcon severity="critical" />,
-            high: <SeverityIcon severity="high" />,
-            low: <SeverityIcon severity="low" />,
+            normal: snackbarProps?.iconVariant?.normal ?? (
+              <SeverityIcon severity="normal" />
+            ),
+            critical: snackbarProps?.iconVariant?.critical ?? (
+              <SeverityIcon severity="critical" />
+            ),
+            high: snackbarProps?.iconVariant?.high ?? (
+              <SeverityIcon severity="high" />
+            ),
+            low: snackbarProps?.iconVariant?.low ?? (
+              <SeverityIcon severity="low" />
+            ),
           }}
+          dense={snackbarProps?.dense}
+          maxSnack={snackbarProps?.maxSnack}
           Components={{
-            normal: StyledMaterialDesignContent,
-            critical: StyledMaterialDesignContent,
-            high: StyledMaterialDesignContent,
-            low: StyledMaterialDesignContent,
+            normal:
+              snackbarProps?.Components?.normal ?? StyledMaterialDesignContent,
+            critical:
+              snackbarProps?.Components?.critical ??
+              StyledMaterialDesignContent,
+            high:
+              snackbarProps?.Components?.high ?? StyledMaterialDesignContent,
+            low: snackbarProps?.Components?.low ?? StyledMaterialDesignContent,
           }}
         />
       )}
-      <SidebarItem
-        to={notificationsRoute}
-        onClick={() => {
-          requestUserPermission();
-        }}
-        text={text}
-        icon={icon}
-        {...restProps}
-      >
-        {count && <Chip size="small" label={count > 99 ? '99+' : count} />}
-      </SidebarItem>
+      {props?.renderItem ? (
+        props.renderItem(renderItemProps)
+      ) : (
+        <SidebarItem
+          to={notificationsRoute}
+          onClick={handleClick}
+          text={text}
+          icon={icon}
+          {...restProps}
+        >
+          {count && <Chip size="small" label={count > 99 ? '99+' : count} />}
+        </SidebarItem>
+      )}
     </>
   );
 };

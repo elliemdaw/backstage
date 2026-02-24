@@ -28,5 +28,48 @@ export interface Config {
      * Throttle duration between notification sending, defaults to 50ms
      */
     throttleInterval?: HumanDuration | string;
+    /**
+     * Default settings for user specific notification settings
+     */
+    defaultSettings?: {
+      channels?: {
+        /**
+         * Channel identifier (e.g., 'Web', 'Email')
+         */
+        id: string;
+        /**
+         * Optional flag to enable/disable the channel by default.
+         * If not set, defaults to true for backwards compatibility.
+         * When set to false, the channel uses an opt-in strategy where
+         * origins are disabled by default unless explicitly enabled.
+         */
+        enabled?: boolean;
+        origins?: {
+          /**
+           * Origin identifier (e.g., 'plugin:catalog', 'external:jenkins')
+           */
+          id: string;
+          /**
+           * Whether notifications from this origin are enabled by default
+           */
+          enabled: boolean;
+          topics?: {
+            /**
+             * Topic identifier (e.g., 'entity-refresh', 'build-failure')
+             */
+            id: string;
+            /**
+             * Whether notifications for this topic are enabled by default
+             */
+            enabled: boolean;
+          }[];
+        }[];
+      }[];
+    };
+    /*
+     * Time to keep the notifications in the database, defaults to 365 days.
+     * Can be disabled by setting to false.
+     */
+    retention?: HumanDuration | string | false;
   };
 }

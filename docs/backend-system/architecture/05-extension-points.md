@@ -2,7 +2,6 @@
 id: extension-points
 title: Backend Plugin Extension Points
 sidebar_label: Extension Points
-# prettier-ignore
 description: Extension points of backend plugins
 ---
 
@@ -65,6 +64,64 @@ export const scaffolderPlugin = createBackendPlugin(
 ```
 
 Note that we create a closure that adds to a shared `actions` structure when `addAction` is called by users of your extension point. It is safe for us to then access our `actions` in the `init` method of our plugin, since all modules that extend our plugin will be completely initialized before our plugin gets initialized. That means that at the point where our `init` method is called, all actions have been added and can be accessed.
+
+## Factory-Based Extension Points
+
+In some cases, you may want to be able to attribute startup failures to modules that provided an extension, rather than failing the plugin startup entirely. To do this, you can use a variant of `registerExtensionPoint` that instead of providing a direct implementation, registers a factory function that produces the implementation. This factory receives an `ExtensionPointFactoryContext` with a `reportModuleStartupFailure` method that lets you report startup failures and attribute them to the module.
+
+Here's an example of registering an extension point using a factory:
+
+```ts
+import {
+  createBackendPlugin,
+  ExtensionPointFactoryContext,
+} from '@backstage/backend-plugin-api';
+import { assertError, ForwardedError } from '@backstage/errors';
+import { createProviderConnection, Provider } from './internal';
+
+type ProviderEntry = {
+  provider: Provider;
+  context: ExtensionPointFactoryContext;
+};
+
+export const examplePlugin = createBackendPlugin({
+  pluginId: 'example',
+  register(env) {
+    const providers: ProviderEntry[] = [];
+
+    // Using the variant of registerExtensionPoint that takes an options object.
+    env.registerExtensionPoint({
+      extensionPoint: exampleProvidersExtensionPoint,
+      // The factory function produces a separate instance for each module.
+      factory: context => ({
+        addProvider(provider) {
+          // Store the context together with the provider so we can report failures later
+          providers.push({ provider, context });
+        },
+      }),
+    });
+
+    env.registerInit({
+      deps: { database: coreServices.database },
+      async init({ database }) {
+        for (const { provider, context } of providers) {
+          const connection = await createProviderConnection(provider, database);
+          try {
+            // This connects each provider that was installed by a module
+            await provider.connect(connection);
+          } catch (error: unknown) {
+            // If the connection fails, we can report this as a failure of the module rather than the plugin
+            assertError(error);
+            context.reportModuleStartupFailure({
+              error: new ForwardedError('Failed to connect provider', error),
+            });
+          }
+        }
+      },
+    });
+  },
+});
+```
 
 ## Module Extension Points
 

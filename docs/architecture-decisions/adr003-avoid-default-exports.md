@@ -1,7 +1,6 @@
 ---
 id: adrs-adr003
 title: 'ADR003: Avoid Default Exports and Prefer Named Exports'
-# prettier-ignore
 description: Architecture Decision Record (ADR) log on Avoid Default Exports and Prefer Named Exports
 ---
 
@@ -49,7 +48,7 @@ benefits. A few are:
 ## Decision
 
 We will stop using default exports except when absolutely necessary (such as
-[`React.lazy`](https://reactjs.org/docs/code-splitting.html#reactlazy) modules).
+[`React.lazy`](https://18.react.dev/reference/react/lazy) modules).
 A workaround exists for those that would prefer to never use `default`:
 
 ```ts

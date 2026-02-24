@@ -5,10 +5,11 @@ import { truncateDescription } from '@site/src/util/truncateDescription';
 import { ChipCategory } from '@site/src/util/types';
 import Layout from '@theme/Layout';
 import clsx from 'clsx';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 import { IPluginData, PluginCard } from './_pluginCard';
 import pluginsStyles from './plugins.module.scss';
+import { PluginsSearch } from '@site/src/components/pluginsSearch/pluginsSearch';
 
 interface IPluginsList {
   corePlugins: IPluginData[];
@@ -55,6 +56,7 @@ const Plugins = () => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showCoreFeatures, setShowCoreFeatures] = useState(true);
   const [showOtherPlugins, setShowOtherPlugins] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const handleChipClick = (categoryName: string) => {
     const isSelected =
@@ -97,6 +99,46 @@ const Plugins = () => {
     }
   };
 
+  const matchesSearch = (pluginData: IPluginData, term: string) => {
+    if (!term) return true;
+    const lowerTerm = term.toLowerCase();
+    return (
+      pluginData.title.toLowerCase().includes(lowerTerm) ||
+      pluginData.description.toLowerCase().includes(lowerTerm) ||
+      pluginData.category.toLowerCase().includes(lowerTerm) ||
+      (pluginData.author && pluginData.author.toLowerCase().includes(lowerTerm))
+    );
+  };
+
+  const matchesCategory = (pluginData: IPluginData, categories: string[]) => {
+    if (categories.length === 0) return true;
+    return categories.includes(pluginData.category);
+  };
+
+  const corePlugins = useMemo(() => {
+    return plugins.corePlugins
+      .filter(pluginData => pluginData.status !== 'archived')
+      .filter(pluginData => matchesCategory(pluginData, selectedCategories))
+      .filter(pluginData => matchesSearch(pluginData, searchTerm));
+  }, [selectedCategories, searchTerm]);
+
+  const otherPlugins = useMemo(() => {
+    return plugins.otherPlugins
+      .filter(
+        pluginData =>
+          pluginData.status !== 'inactive' && pluginData.status !== 'archived',
+      )
+      .filter(pluginData => matchesCategory(pluginData, selectedCategories))
+      .filter(pluginData => matchesSearch(pluginData, searchTerm));
+  }, [selectedCategories, searchTerm]);
+
+  const inactivePlugins = useMemo(() => {
+    return plugins.otherPlugins
+      .filter(pluginData => pluginData.status === 'inactive')
+      .filter(pluginData => matchesCategory(pluginData, selectedCategories))
+      .filter(pluginData => matchesSearch(pluginData, searchTerm));
+  }, [selectedCategories, searchTerm]);
+
   return (
     <Layout>
       <div
@@ -126,31 +168,38 @@ const Plugins = () => {
             categories={categories}
             handleChipClick={handleChipClick}
           />
+          <PluginsSearch
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+          />
         </div>
 
-        {showCoreFeatures && (
+        {corePlugins.length === 0 &&
+          otherPlugins.length === 0 &&
+          inactivePlugins.length === 0 && (
+            <div className="margin-vert--lg">
+              <h3>No plugins found</h3>
+              <p>
+                We couldn't find any plugins matching your criteria. Please try
+                adjusting your search or filter settings.
+              </p>
+            </div>
+          )}
+
+        {showCoreFeatures && corePlugins.length > 0 && (
           <div>
-            <h2>Core Features</h2>
+            <h2>Core Features ({corePlugins.length})</h2>
             <div className="pluginsContainer margin-bottom--lg">
-              {plugins.corePlugins
-                .filter(
-                  pluginData =>
-                    !selectedCategories.length ||
-                    selectedCategories.includes(pluginData.category),
-                )
-                .map(pluginData => (
-                  <PluginCard
-                    key={pluginData.title}
-                    {...pluginData}
-                  ></PluginCard>
-                ))}
+              {corePlugins.map(pluginData => (
+                <PluginCard key={pluginData.title} {...pluginData}></PluginCard>
+              ))}
             </div>
           </div>
         )}
 
-        {showOtherPlugins && (
+        {showOtherPlugins && otherPlugins.length > 0 && (
           <div>
-            <h2>All Plugins</h2>
+            <h2>Active Plugins ({otherPlugins.length})</h2>
             <p>
               Friendly reminder: While we love the variety and contributions of
               our open source plugins, they haven't been fully vetted by the
@@ -158,18 +207,39 @@ const Plugins = () => {
               your due diligence before installing. Happy exploring!
             </p>
             <div className="pluginsContainer margin-bottom--lg">
-              {plugins.otherPlugins
-                .filter(
-                  pluginData =>
-                    !selectedCategories.length ||
-                    selectedCategories.includes(pluginData.category),
-                )
-                .map(pluginData => (
-                  <PluginCard
-                    key={pluginData.title}
-                    {...pluginData}
-                  ></PluginCard>
-                ))}
+              {otherPlugins.map(pluginData => (
+                <PluginCard key={pluginData.title} {...pluginData}></PluginCard>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showOtherPlugins &&
+          otherPlugins.length === 0 &&
+          inactivePlugins.length > 0 && (
+            <div>
+              <h2>Active Plugins (0)</h2>
+              <p>We couldn't find any active plugins matching your criteria.</p>
+            </div>
+          )}
+
+        {inactivePlugins.length > 0 && (
+          <div>
+            <h2>Inactive Plugins ({inactivePlugins.length})</h2>
+            <p>
+              These plugins are no longer actively maintained as their NPM
+              package has not seen an update in more than 365 days. They are
+              kept here for reference but may not work with current versions of
+              Backstage. Details on the audit process can be found in the{' '}
+              <Link to="/docs/plugins/plugin-directory-audit">
+                Plugin Directory Audit
+              </Link>{' '}
+              documentation.
+            </p>
+            <div className="pluginsContainer margin-bottom--lg">
+              {inactivePlugins.map(pluginData => (
+                <PluginCard key={pluginData.title} {...pluginData}></PluginCard>
+              ))}
             </div>
           </div>
         )}

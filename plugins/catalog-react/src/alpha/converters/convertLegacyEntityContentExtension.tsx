@@ -26,9 +26,9 @@ import {
 import { ExtensionDefinition } from '@backstage/frontend-plugin-api';
 import kebabCase from 'lodash/kebabCase';
 import startCase from 'lodash/startCase';
-import { ComponentType } from 'react';
-import { EntityContentBlueprint } from '../blueprints';
-import { EntityPredicate } from '../predicates';
+import { ComponentType, ReactElement } from 'react';
+import { EntityContentBlueprint } from '../blueprints/EntityContentBlueprint';
+import { FilterPredicate } from '@backstage/filter-predicates';
 import { Entity } from '@backstage/catalog-model';
 
 /** @alpha */
@@ -36,9 +36,20 @@ export function convertLegacyEntityContentExtension(
   LegacyExtension: ComponentType<{}>,
   overrides?: {
     name?: string;
-    filter?: string | EntityPredicate | ((entity: Entity) => boolean);
-    defaultPath?: string;
-    defaultTitle?: string;
+    filter?: string | FilterPredicate | ((entity: Entity) => boolean);
+    path?: string;
+    title?: string;
+    icon?: string | ReactElement;
+
+    /**
+     * @deprecated Use the `path` param instead.
+     */
+    defaultPath?: [Error: `Use the 'path' override instead`];
+
+    /**
+     * @deprecated Use the `path` param instead.
+     */
+    defaultTitle?: [Error: `Use the 'title' override instead`];
   },
 ): ExtensionDefinition {
   const element = <LegacyExtension />;
@@ -72,13 +83,20 @@ export function convertLegacyEntityContentExtension(
     }
   }
   name = name && kebabCase(name);
-
+  // TODO(blam): Remove support for all the `default*` props in the future, this breaks backwards compatibility without it
+  // As this is marked as BREAKING ALPHA, it doesn't affect the public API so it falls in range and gets picked
+  // up by packages that depend on `catalog-react`.
   return EntityContentBlueprint.make({
     name: overrides?.name ?? name,
     params: {
       filter: overrides?.filter,
-      defaultPath: overrides?.defaultPath ?? `/${kebabCase(infix)}`,
-      defaultTitle: overrides?.defaultTitle ?? startCase(infix),
+      path: (overrides?.path ??
+        overrides?.defaultPath ??
+        `/${kebabCase(infix)}`) as string,
+      title: (overrides?.title ??
+        overrides?.defaultTitle ??
+        startCase(infix)) as string,
+      icon: overrides?.icon,
       routeRef: mountPoint && convertLegacyRouteRef(mountPoint),
       loader: async () => compatWrapper(element),
     },

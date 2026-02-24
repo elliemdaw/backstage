@@ -20,7 +20,6 @@ import {
   HttpAuthService,
   LoggerService,
   PermissionsService,
-  SchedulerService,
 } from '@backstage/backend-plugin-api';
 import {
   ANNOTATION_LOCATION,
@@ -62,6 +61,10 @@ import {
   locationInput,
   validateRequestBody,
 } from './util';
+import {
+  encodeLocationQueryCursor,
+  parseLocationQuery,
+} from './request/parseLocationQuery';
 
 /**
  * Options used by {@link createRouter}.
@@ -70,18 +73,16 @@ export interface RouterOptions {
   entitiesCatalog?: EntitiesCatalog;
   locationAnalyzer?: LocationAnalyzer;
   locationService: LocationService;
-  orchestrator?: CatalogProcessingOrchestrator;
+  orchestrator: CatalogProcessingOrchestrator;
   refreshService?: RefreshService;
-  scheduler?: SchedulerService;
   logger: LoggerService;
   config: Config;
   permissionIntegrationRouter?: express.Router;
   auth: AuthService;
   httpAuth: HttpAuthService;
   permissionsService: PermissionsService;
-  // TODO: Require AuditorService once `backend-legacy` is removed
-  auditor?: AuditorService;
-  disableRelationsCompatibility?: boolean;
+  auditor: AuditorService;
+  enableRelationsCompatibility?: boolean;
 }
 
 /**
@@ -110,7 +111,7 @@ export async function createRouter(
     auth,
     httpAuth,
     auditor,
-    disableRelationsCompatibility = false,
+    enableRelationsCompatibility = false,
   } = options;
 
   const readonlyEnabled =
@@ -124,7 +125,7 @@ export async function createRouter(
     router.post('/refresh', async (req, res) => {
       const { authorizationToken, ...restBody } = req.body;
 
-      const auditorEvent = await auditor?.createEvent({
+      const auditorEvent = await auditor.createEvent({
         eventId: 'entity-mutate',
         severityLevel: 'medium',
         meta: {
@@ -160,7 +161,7 @@ export async function createRouter(
   if (entitiesCatalog) {
     router
       .get('/entities', async (req, res) => {
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-fetch',
           request: req,
           meta: {
@@ -179,7 +180,7 @@ export async function createRouter(
           // When pagination parameters are passed in, use the legacy slow path
           // that loads all entities into memory
 
-          if (pagination || disableRelationsCompatibility !== true) {
+          if (pagination || enableRelationsCompatibility === true) {
             const { entities, pageInfo } = await entitiesCatalog.entities({
               filter,
               fields,
@@ -204,7 +205,7 @@ export async function createRouter(
             await writeEntitiesResponse({
               res,
               items: entities,
-              alwaysUseObjectMode: !disableRelationsCompatibility,
+              alwaysUseObjectMode: enableRelationsCompatibility,
             });
             return;
           }
@@ -214,7 +215,7 @@ export async function createRouter(
           let cursor: Cursor | undefined;
 
           try {
-            let currentWrite: Promise<boolean> | undefined = undefined;
+            let currentWrite: Promise<'ok' | 'closed'> | undefined = undefined;
             do {
               const result = await entitiesCatalog.queryEntities(
                 !cursor
@@ -230,7 +231,7 @@ export async function createRouter(
               );
 
               // Wait for previous write to complete
-              if (await currentWrite) {
+              if ((await currentWrite) === 'closed') {
                 return; // Client closed connection
               }
 
@@ -258,7 +259,7 @@ export async function createRouter(
         }
       })
       .get('/entities/by-query', async (req, res) => {
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-fetch',
           request: req,
           meta: {
@@ -295,7 +296,7 @@ export async function createRouter(
           await writeEntitiesResponse({
             res,
             items,
-            alwaysUseObjectMode: !disableRelationsCompatibility,
+            alwaysUseObjectMode: enableRelationsCompatibility,
             responseWrapper: entities => ({
               items: entities,
               ...meta,
@@ -311,7 +312,7 @@ export async function createRouter(
       .get('/entities/by-uid/:uid', async (req, res) => {
         const { uid } = req.params;
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-fetch',
           request: req,
           meta: {
@@ -356,7 +357,7 @@ export async function createRouter(
       .delete('/entities/by-uid/:uid', async (req, res) => {
         const { uid } = req.params;
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-mutate',
           severityLevel: 'medium',
           request: req,
@@ -385,7 +386,7 @@ export async function createRouter(
         const { kind, namespace, name } = req.params;
         const entityRef = stringifyEntityRef({ kind, namespace, name });
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-fetch',
           request: req,
           meta: {
@@ -420,7 +421,7 @@ export async function createRouter(
           const { kind, namespace, name } = req.params;
           const entityRef = stringifyEntityRef({ kind, namespace, name });
 
-          const auditorEvent = await auditor?.createEvent({
+          const auditorEvent = await auditor.createEvent({
             eventId: 'entity-fetch',
             request: req,
             meta: {
@@ -456,7 +457,7 @@ export async function createRouter(
         },
       )
       .post('/entities/by-refs', async (req, res) => {
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-fetch',
           request: req,
           meta: {
@@ -482,7 +483,7 @@ export async function createRouter(
           await writeEntitiesResponse({
             res,
             items,
-            alwaysUseObjectMode: !disableRelationsCompatibility,
+            alwaysUseObjectMode: enableRelationsCompatibility,
             responseWrapper: entities => ({
               items: entities,
             }),
@@ -495,7 +496,7 @@ export async function createRouter(
         }
       })
       .get('/entity-facets', async (req, res) => {
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'entity-facets',
           request: req,
         });
@@ -525,7 +526,7 @@ export async function createRouter(
         const location = await validateRequestBody(req, locationInput);
         const dryRun = yn(req.query.dryRun, { default: false });
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'location-mutate',
           severityLevel: dryRun ? 'low' : 'medium',
           request: req,
@@ -570,7 +571,7 @@ export async function createRouter(
         }
       })
       .get('/locations', async (req, res) => {
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'location-fetch',
           request: req,
           meta: {
@@ -594,10 +595,54 @@ export async function createRouter(
         }
       })
 
+      .post('/locations/by-query', async (req, res) => {
+        const auditorEvent = await auditor.createEvent({
+          eventId: 'location-fetch',
+          request: req,
+          meta: {
+            queryType: 'by-query',
+          },
+        });
+
+        try {
+          const request = parseLocationQuery(req.body ?? {});
+          const result = await locationService.queryLocations({
+            ...request,
+            limit: request.limit + 1,
+            credentials: await httpAuth.credentials(req),
+          });
+
+          const hasNextPage = result.items.length > request.limit;
+          const items = hasNextPage
+            ? result.items.slice(0, request.limit)
+            : result.items;
+          const nextCursor = hasNextPage
+            ? encodeLocationQueryCursor({
+                limit: request.limit,
+                afterId: items[items.length - 1].id,
+                query: request.query,
+              })
+            : undefined;
+
+          await auditorEvent?.success();
+
+          res.status(200).json({
+            items,
+            totalItems: result.totalItems,
+            pageInfo: {
+              nextCursor,
+            },
+          });
+        } catch (err) {
+          await auditorEvent?.fail({ error: err });
+          throw err;
+        }
+      })
+
       .get('/locations/:id', async (req, res) => {
         const { id } = req.params;
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'location-fetch',
           request: req,
           meta: {
@@ -628,7 +673,7 @@ export async function createRouter(
       .delete('/locations/:id', async (req, res) => {
         const { id } = req.params;
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'location-mutate',
           severityLevel: 'medium',
           request: req,
@@ -659,7 +704,7 @@ export async function createRouter(
         const { kind, namespace, name } = req.params;
         const locationRef = `${kind}:${namespace}/${name}`;
 
-        const auditorEvent = await auditor?.createEvent({
+        const auditorEvent = await auditor.createEvent({
           eventId: 'location-fetch',
           request: req,
           meta: {
@@ -692,7 +737,7 @@ export async function createRouter(
 
   if (locationAnalyzer) {
     router.post('/analyze-location', async (req, res) => {
-      const auditorEvent = await auditor?.createEvent({
+      const auditorEvent = await auditor.createEvent({
         eventId: 'location-analyze',
         request: req,
       });
@@ -743,86 +788,84 @@ export async function createRouter(
     });
   }
 
-  if (orchestrator) {
-    router.post('/validate-entity', async (req, res) => {
-      const auditorEvent = await auditor?.createEvent({
-        eventId: 'entity-validate',
-        request: req,
+  router.post('/validate-entity', async (req, res) => {
+    const auditorEvent = await auditor.createEvent({
+      eventId: 'entity-validate',
+      request: req,
+    });
+
+    try {
+      const bodySchema = z.object({
+        entity: z.unknown(),
+        location: z.string(),
       });
 
+      let body: z.infer<typeof bodySchema>;
+      let entity: Entity;
+      let location: { type: string; target: string };
       try {
-        const bodySchema = z.object({
-          entity: z.unknown(),
-          location: z.string(),
-        });
-
-        let body: z.infer<typeof bodySchema>;
-        let entity: Entity;
-        let location: { type: string; target: string };
-        try {
-          body = await validateRequestBody(req, bodySchema);
-          entity = validateEntityEnvelope(body.entity);
-          location = parseLocationRef(body.location);
-          if (location.type !== 'url')
-            throw new TypeError(
-              `Invalid location ref ${body.location}, only 'url:<target>' is supported, e.g. url:https://host/path`,
-            );
-        } catch (err) {
-          await auditorEvent?.fail({
-            error: err,
-          });
-
-          return res.status(400).json({
-            errors: [serializeError(err)],
-          });
-        }
-
-        const credentials = await httpAuth.credentials(req);
-        const authorizedValidationService = new AuthorizedValidationService(
-          orchestrator,
-          permissionsService,
-        );
-        const processingResult = await authorizedValidationService.process(
-          {
-            entity: {
-              ...entity,
-              metadata: {
-                ...entity.metadata,
-                annotations: {
-                  [ANNOTATION_LOCATION]: body.location,
-                  [ANNOTATION_ORIGIN_LOCATION]: body.location,
-                  ...entity.metadata.annotations,
-                },
-              },
-            },
-          },
-          credentials,
-        );
-
-        if (!processingResult.ok) {
-          const errors = processingResult.errors.map(e => serializeError(e));
-
-          await auditorEvent?.fail({
-            // TODO(Rugvip): Seems like there aren't proper types for AggregateError yet
-            error: (AggregateError as any)(errors, 'Could not validate entity'),
-          });
-
-          res.status(400).json({
-            errors,
-          });
-        }
-
-        await auditorEvent?.success();
-
-        return res.status(200).end();
+        body = await validateRequestBody(req, bodySchema);
+        entity = validateEntityEnvelope(body.entity);
+        location = parseLocationRef(body.location);
+        if (location.type !== 'url')
+          throw new TypeError(
+            `Invalid location ref ${body.location}, only 'url:<target>' is supported, e.g. url:https://host/path`,
+          );
       } catch (err) {
         await auditorEvent?.fail({
           error: err,
         });
-        throw err;
+
+        return res.status(400).json({
+          errors: [serializeError(err)],
+        });
       }
-    });
-  }
+
+      const credentials = await httpAuth.credentials(req);
+      const authorizedValidationService = new AuthorizedValidationService(
+        orchestrator,
+        permissionsService,
+      );
+      const processingResult = await authorizedValidationService.process(
+        {
+          entity: {
+            ...entity,
+            metadata: {
+              ...entity.metadata,
+              annotations: {
+                [ANNOTATION_LOCATION]: body.location,
+                [ANNOTATION_ORIGIN_LOCATION]: body.location,
+                ...entity.metadata.annotations,
+              },
+            },
+          },
+        },
+        credentials,
+      );
+
+      if (!processingResult.ok) {
+        const errors = processingResult.errors.map(e => serializeError(e));
+
+        await auditorEvent?.fail({
+          // TODO(Rugvip): Seems like there aren't proper types for AggregateError yet
+          error: (AggregateError as any)(errors, 'Could not validate entity'),
+        });
+
+        res.status(400).json({
+          errors,
+        });
+      }
+
+      await auditorEvent?.success();
+
+      return res.status(200).end();
+    } catch (err) {
+      await auditorEvent?.fail({
+        error: err,
+      });
+      throw err;
+    }
+  });
 
   return router;
 }

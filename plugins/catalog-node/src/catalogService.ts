@@ -15,11 +15,11 @@
  */
 
 import {
+  AuthService,
+  BackstageCredentials,
+  coreServices,
   createServiceFactory,
   createServiceRef,
-  coreServices,
-  BackstageCredentials,
-  AuthService,
 } from '@backstage/backend-plugin-api';
 import {
   AddLocationRequest,
@@ -39,9 +39,17 @@ import {
   Location,
   QueryEntitiesRequest,
   QueryEntitiesResponse,
+  QueryLocationsInitialRequest,
+  QueryLocationsRequest,
+  QueryLocationsResponse,
+  StreamEntitiesRequest,
   ValidateEntityResponse,
 } from '@backstage/catalog-client';
 import { CompoundEntityRef, Entity } from '@backstage/catalog-model';
+import {
+  AnalyzeLocationRequest,
+  AnalyzeLocationResponse,
+} from '@backstage/plugin-catalog-common';
 
 /**
  * @public
@@ -102,6 +110,16 @@ export interface CatalogService {
     options: CatalogServiceRequestOptions,
   ): Promise<GetLocationsResponse>;
 
+  queryLocations(
+    request: QueryLocationsRequest | undefined,
+    options: CatalogServiceRequestOptions,
+  ): Promise<QueryLocationsResponse>;
+
+  streamLocations(
+    request: QueryLocationsInitialRequest | undefined,
+    options: CatalogServiceRequestOptions,
+  ): AsyncIterable<Location[]>;
+
   getLocationById(
     id: string,
     options: CatalogServiceRequestOptions,
@@ -132,6 +150,16 @@ export interface CatalogService {
     locationRef: string,
     options: CatalogServiceRequestOptions,
   ): Promise<ValidateEntityResponse>;
+
+  analyzeLocation(
+    location: AnalyzeLocationRequest,
+    options: CatalogServiceRequestOptions,
+  ): Promise<AnalyzeLocationResponse>;
+
+  streamEntities(
+    request: StreamEntitiesRequest | undefined,
+    options: CatalogServiceRequestOptions,
+  ): AsyncIterable<Entity[]>;
 }
 
 class DefaultCatalogService implements CatalogService {
@@ -239,6 +267,26 @@ class DefaultCatalogService implements CatalogService {
     );
   }
 
+  async queryLocations(
+    request: QueryLocationsRequest,
+    options: CatalogServiceRequestOptions,
+  ): Promise<QueryLocationsResponse> {
+    return this.#catalogApi.queryLocations(
+      request,
+      await this.#getOptions(options),
+    );
+  }
+
+  async *streamLocations(
+    request: QueryLocationsInitialRequest | undefined,
+    options: CatalogServiceRequestOptions,
+  ): AsyncIterable<Location[]> {
+    yield* this.#catalogApi.streamLocations(
+      request,
+      await this.#getOptions(options),
+    );
+  }
+
   async getLocationById(
     id: string,
     options: CatalogServiceRequestOptions,
@@ -297,6 +345,26 @@ class DefaultCatalogService implements CatalogService {
     return this.#catalogApi.validateEntity(
       entity,
       locationRef,
+      await this.#getOptions(options),
+    );
+  }
+
+  async analyzeLocation(
+    location: AnalyzeLocationRequest,
+    options: CatalogServiceRequestOptions,
+  ): Promise<AnalyzeLocationResponse> {
+    return this.#catalogApi.analyzeLocation(
+      location,
+      await this.#getOptions(options),
+    );
+  }
+
+  async *streamEntities(
+    request: StreamEntitiesRequest | undefined,
+    options: CatalogServiceRequestOptions,
+  ): AsyncIterable<Entity[]> {
+    yield* this.#catalogApi.streamEntities(
+      request,
       await this.#getOptions(options),
     );
   }

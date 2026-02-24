@@ -13,15 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import { paths as cliPaths, resolvePackagePaths } from '../../lib/paths';
 import { createTemporaryTsConfig } from './utils';
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import pLimit from 'p-limit';
 import { mkdirp } from 'fs-extra';
 import { PackageDocsCache } from './Cache';
 import { Lockfile } from '@backstage/cli-node';
+import { glob } from 'glob';
+import { existsSync } from 'node:fs';
 
 const limit = pLimit(8);
 
@@ -29,8 +31,8 @@ const execAsync = promisify(exec);
 
 const EXCLUDE = [
   'packages/app',
-  'packages/app-next',
-  'packages/app-next-example-plugin',
+  'packages/app-legacy',
+  'packages/app-example-plugin',
   'packages/cli',
   'packages/cli-common',
   'packages/cli-node',
@@ -113,6 +115,24 @@ async function generateDocJson(pkg: string) {
 
 export default async function packageDocs(paths: string[] = [], opts: any) {
   console.warn('!!! This is an experimental command !!!');
+
+  const existingDocsJsonPaths = glob.sync(
+    cliPaths.resolveTargetRoot('dist-types/**/docs.json'),
+  );
+  if (existingDocsJsonPaths.length > 0) {
+    console.warn(
+      `!!! Deleting all ${existingDocsJsonPaths.length} existing docs.json files !!!`,
+    );
+
+    for (const path of existingDocsJsonPaths) {
+      await rm(path, { force: true });
+    }
+  }
+  console.warn('!!! Deleting existing docs output !!!');
+  await rm(cliPaths.resolveTargetRoot('type-docs'), {
+    recursive: true,
+    force: true,
+  });
   const selectedPackageDirs = await resolvePackagePaths({
     paths,
     include: opts.include,
@@ -128,7 +148,13 @@ export default async function packageDocs(paths: string[] = [], opts: any) {
   await Promise.all(
     selectedPackageDirs.map(pkg =>
       limit(async () => {
-        if (EXCLUDE.includes(pkg)) {
+        const pkgJson = JSON.parse(
+          await readFile(
+            cliPaths.resolveTargetRoot(pkg, 'package.json'),
+            'utf-8',
+          ),
+        );
+        if (EXCLUDE.includes(pkg) || pkgJson.name.startsWith('@internal/')) {
           return;
         }
         if (await cache.has(pkg)) {
@@ -195,6 +221,9 @@ export default async function packageDocs(paths: string[] = [], opts: any) {
       ...HIGHLIGHT_LANGUAGES.flatMap(e => ['--highlightLanguages', e]),
       '--out',
       cliPaths.resolveTargetRoot('type-docs'),
+      ...(existsSync(cliPaths.resolveTargetRoot('typedoc.json'))
+        ? ['--options', cliPaths.resolveTargetRoot('typedoc.json')]
+        : []),
     ].join(' '),
     {
       cwd: cliPaths.targetRoot,

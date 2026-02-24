@@ -12,7 +12,6 @@ import type { Handler } from 'express';
 import { HumanDuration } from '@backstage/types';
 import { isChildPath } from '@backstage/cli-common';
 import { JsonObject } from '@backstage/types';
-import { JSONSchema7 } from 'json-schema';
 import { JsonValue } from '@backstage/types';
 import { Knex } from 'knex';
 import { Permission } from '@backstage/plugin-permission-common';
@@ -23,75 +22,9 @@ import { PermissionRule } from '@backstage/plugin-permission-node';
 import { PermissionRuleset } from '@backstage/plugin-permission-node';
 import { QueryPermissionRequest } from '@backstage/plugin-permission-common';
 import { QueryPermissionResponse } from '@backstage/plugin-permission-common';
-import { Readable } from 'stream';
+import { Readable } from 'node:stream';
 import type { Request as Request_2 } from 'express';
 import type { Response as Response_2 } from 'express';
-import { z } from 'zod';
-import { ZodType } from 'zod';
-
-// @public (undocumented)
-export type ActionsRegistryActionContext<TInputSchema extends ZodType> = {
-  input: z.infer<TInputSchema>;
-  logger: LoggerService;
-  credentials: BackstageCredentials;
-};
-
-// @public (undocumented)
-export type ActionsRegistryActionOptions<
-  TInputSchema extends ZodType,
-  TOutputSchema extends ZodType,
-> = {
-  name: string;
-  title: string;
-  description: string;
-  schema: {
-    input: (zod: typeof z) => TInputSchema;
-    output: (zod: typeof z) => TOutputSchema;
-  };
-  action: (context: ActionsRegistryActionContext<TInputSchema>) => Promise<
-    z.infer<TOutputSchema> extends void
-      ? void
-      : {
-          output: z.infer<TOutputSchema>;
-        }
-  >;
-};
-
-// @public (undocumented)
-export interface ActionsRegistryService {
-  // (undocumented)
-  register<TInputSchema extends ZodType, TOutputSchema extends ZodType>(
-    options: ActionsRegistryActionOptions<TInputSchema, TOutputSchema>,
-  ): void;
-}
-
-// @public (undocumented)
-export interface ActionsService {
-  // (undocumented)
-  invoke(opts: {
-    id: string;
-    input?: JsonObject;
-    credentials: BackstageCredentials;
-  }): Promise<{
-    output: JsonValue;
-  }>;
-  // (undocumented)
-  list: (opts: { credentials: BackstageCredentials }) => Promise<{
-    actions: ActionsServiceAction[];
-  }>;
-}
-
-// @public (undocumented)
-export type ActionsServiceAction = {
-  id: string;
-  name: string;
-  title: string;
-  description: string;
-  schema: {
-    input: JSONSchema7;
-    output: JSONSchema7;
-  };
-};
 
 // @public
 export interface AuditorService {
@@ -169,6 +102,11 @@ export interface BackendModuleRegistrationPoints {
     impl: TExtensionPoint,
   ): void;
   // (undocumented)
+  registerExtensionPoint<TExtensionPoint>(options: {
+    extensionPoint: ExtensionPoint<TExtensionPoint>;
+    factory: (context: ExtensionPointFactoryContext) => TExtensionPoint;
+  }): void;
+  // (undocumented)
   registerInit<
     TDeps extends {
       [name in string]: ServiceRef<unknown> | ExtensionPoint<unknown>;
@@ -181,11 +119,14 @@ export interface BackendModuleRegistrationPoints {
 
 // @public
 export interface BackendPluginRegistrationPoints {
-  // (undocumented)
   registerExtensionPoint<TExtensionPoint>(
     ref: ExtensionPoint<TExtensionPoint>,
     impl: TExtensionPoint,
   ): void;
+  registerExtensionPoint<TExtensionPoint>(options: {
+    extensionPoint: ExtensionPoint<TExtensionPoint>;
+    factory: (context: ExtensionPointFactoryContext) => TExtensionPoint;
+  }): void;
   // (undocumented)
   registerInit<
     TDeps extends {
@@ -272,12 +213,6 @@ export type CacheServiceSetOptions = {
 // @public
 export namespace coreServices {
   const auth: ServiceRef<AuthService, 'plugin', 'singleton'>;
-  const actions: ServiceRef<ActionsService, 'plugin', 'singleton'>;
-  const actionsRegistry: ServiceRef<
-    ActionsRegistryService,
-    'plugin',
-    'singleton'
-  >;
   const userInfo: ServiceRef<UserInfoService, 'plugin', 'singleton'>;
   const cache: ServiceRef<CacheService, 'plugin', 'singleton'>;
   const rootConfig: ServiceRef<RootConfigService, 'root', 'singleton'>;
@@ -305,6 +240,11 @@ export namespace coreServices {
   const rootLogger: ServiceRef<RootLoggerService, 'root', 'singleton'>;
   const scheduler: ServiceRef<SchedulerService, 'plugin', 'singleton'>;
   const urlReader: ServiceRef<UrlReaderService, 'plugin', 'singleton'>;
+  const rootInstanceMetadata: ServiceRef<
+    RootInstanceMetadataService,
+    'root',
+    'singleton'
+  >;
 }
 
 // @public
@@ -455,6 +395,11 @@ export type ExtensionPoint<T> = {
   toString(): string;
   $$type: '@backstage/ExtensionPoint';
 };
+
+// @public
+export interface ExtensionPointFactoryContext {
+  reportModuleStartupFailure(options: { error: Error }): void;
+}
 
 // @public
 export interface HttpAuthService {
@@ -649,6 +594,24 @@ export interface RootHealthService {
 // @public
 export interface RootHttpRouterService {
   use(path: string, handler: Handler): void;
+}
+
+// @public (undocumented)
+export interface RootInstanceMetadataService {
+  // (undocumented)
+  getInstalledPlugins: () => Promise<
+    ReadonlyArray<RootInstanceMetadataServicePluginInfo>
+  >;
+}
+
+// @public (undocumented)
+export interface RootInstanceMetadataServicePluginInfo {
+  // (undocumented)
+  readonly modules: ReadonlyArray<{
+    moduleId: string;
+  }>;
+  // (undocumented)
+  readonly pluginId: string;
 }
 
 // @public

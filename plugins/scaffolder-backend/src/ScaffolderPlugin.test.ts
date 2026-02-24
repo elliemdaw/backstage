@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { IncomingMessage } from 'http';
+import { IncomingMessage } from 'node:http';
 import request from 'supertest';
 import waitForExpect from 'wait-for-expect';
 
@@ -737,9 +737,10 @@ describe('scaffolderPlugin', () => {
     });
 
     // Retry the task by ID
-    response = await request(server).post(
-      `/api/scaffolder/v2/tasks/${taskId}/retry`,
-    );
+    response = await request(server)
+      .post(`/api/scaffolder/v2/tasks/${taskId}/retry`)
+      .send({});
+
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({ id: taskId });
 

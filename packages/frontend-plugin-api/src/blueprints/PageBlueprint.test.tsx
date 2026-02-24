@@ -34,7 +34,7 @@ describe('PageBlueprint', () => {
       name: 'test-page',
       params: {
         loader: () => Promise.resolve(<div>Test</div>),
-        defaultPath: '/test',
+        path: '/test',
         routeRef: mockRouteRef,
       },
     });
@@ -56,13 +56,63 @@ describe('PageBlueprint', () => {
               "path": {
                 "type": "string",
               },
+              "title": {
+                "type": "string",
+              },
             },
             "type": "object",
           },
         },
         "disabled": false,
         "factory": [Function],
-        "inputs": {},
+        "inputs": {
+          "pages": {
+            "$$type": "@backstage/ExtensionInput",
+            "config": {
+              "internal": false,
+              "optional": false,
+              "singleton": false,
+            },
+            "context": {
+              "input": "pages",
+              "kind": "page",
+              "name": "test-page",
+            },
+            "extensionData": [
+              [Function],
+              {
+                "$$type": "@backstage/ExtensionDataRef",
+                "config": {
+                  "optional": true,
+                },
+                "id": "core.routing.ref",
+                "optional": [Function],
+                "toString": [Function],
+              },
+              [Function],
+              {
+                "$$type": "@backstage/ExtensionDataRef",
+                "config": {
+                  "optional": true,
+                },
+                "id": "core.title",
+                "optional": [Function],
+                "toString": [Function],
+              },
+              {
+                "$$type": "@backstage/ExtensionDataRef",
+                "config": {
+                  "optional": true,
+                },
+                "id": "core.icon",
+                "optional": [Function],
+                "toString": [Function],
+              },
+            ],
+            "replaces": undefined,
+            "withContext": [Function],
+          },
+        },
         "kind": "page",
         "name": "test-page",
         "output": [
@@ -74,6 +124,24 @@ describe('PageBlueprint', () => {
               "optional": true,
             },
             "id": "core.routing.ref",
+            "optional": [Function],
+            "toString": [Function],
+          },
+          {
+            "$$type": "@backstage/ExtensionDataRef",
+            "config": {
+              "optional": true,
+            },
+            "id": "core.title",
+            "optional": [Function],
+            "toString": [Function],
+          },
+          {
+            "$$type": "@backstage/ExtensionDataRef",
+            "config": {
+              "optional": true,
+            },
+            "id": "core.icon",
             "optional": [Function],
             "toString": [Function],
           },
@@ -90,7 +158,7 @@ describe('PageBlueprint', () => {
       name: 'test-page',
       params: {
         loader: () => Promise.resolve(<div data-testid="test">Test</div>),
-        defaultPath: '/test',
+        path: '/test',
         routeRef: mockRouteRef,
       },
     });
@@ -123,7 +191,7 @@ describe('PageBlueprint', () => {
               {inputs.cards.map(c => c.get(coreExtensionData.reactElement))}
             </div>
           ),
-          defaultPath: '/test',
+          path: '/test',
           routeRef: mockRouteRef,
         });
       },
@@ -152,5 +220,62 @@ describe('PageBlueprint', () => {
     await waitFor(() =>
       expect(getByText("I'm a lovely card")).toBeInTheDocument(),
     );
+  });
+
+  it('should produce a correct extension tree snapshot with child extensions', () => {
+    const myPage = PageBlueprint.makeWithOverrides({
+      name: 'test-page',
+      inputs: {
+        cards: createExtensionInput([coreExtensionData.reactElement], {
+          optional: false,
+          singleton: false,
+        }),
+      },
+      factory(originalFactory, { inputs }) {
+        return originalFactory({
+          loader: async () => (
+            <div>
+              {inputs.cards.map(c => c.get(coreExtensionData.reactElement))}
+            </div>
+          ),
+          path: '/test',
+          routeRef: mockRouteRef,
+        });
+      },
+    });
+
+    const CardBlueprint = createExtensionBlueprint({
+      kind: 'card',
+      attachTo: { id: 'page:test-page', input: 'cards' },
+      output: [coreExtensionData.reactElement],
+      factory() {
+        return [coreExtensionData.reactElement(<div>I'm a lovely card</div>)];
+      },
+    });
+
+    const tester = createExtensionTester(myPage).add(
+      CardBlueprint.make({ name: 'card', params: {} }),
+    );
+
+    expect(tester.snapshot()).toMatchInlineSnapshot(`
+      {
+        "children": {
+          "cards": [
+            {
+              "id": "card:card",
+              "outputs": [
+                "core.reactElement",
+              ],
+            },
+          ],
+        },
+        "id": "page:test-page",
+        "outputs": [
+          "core.reactElement",
+          "core.routing.path",
+          "core.routing.ref",
+        ],
+      }
+    `);
   });
 });

@@ -16,11 +16,10 @@
 
 import {
   createExtensionInput,
-  IconBundleBlueprint,
   ApiBlueprint,
-  createApiFactory,
   iconsApiRef,
 } from '@backstage/frontend-plugin-api';
+import { IconBundleBlueprint } from '@backstage/plugin-app-react';
 // eslint-disable-next-line @backstage/no-relative-monorepo-imports
 import { DefaultIconsApi } from '../../../../packages/frontend-app-api/src/apis/implementations/IconsApi';
 // eslint-disable-next-line @backstage/no-relative-monorepo-imports
@@ -34,18 +33,22 @@ export const IconsApi = ApiBlueprint.makeWithOverrides({
   inputs: {
     icons: createExtensionInput([IconBundleBlueprint.dataRefs.icons], {
       replaces: [{ id: 'app', input: 'icons' }],
+      internal: true,
     }),
   },
   factory: (originalFactory, { inputs }) => {
-    return originalFactory({
-      factory: createApiFactory(
-        iconsApiRef,
-        new DefaultIconsApi(
-          inputs.icons
-            .map(i => i.get(IconBundleBlueprint.dataRefs.icons))
-            .reduce((acc, bundle) => ({ ...acc, ...bundle }), defaultIcons),
-        ),
-      ),
-    });
+    return originalFactory(defineParams =>
+      defineParams({
+        api: iconsApiRef,
+        deps: {},
+        factory: () => {
+          return new DefaultIconsApi(
+            inputs.icons
+              .map(i => i.get(IconBundleBlueprint.dataRefs.icons))
+              .reduce((acc, bundle) => ({ ...acc, ...bundle }), defaultIcons),
+          );
+        },
+      }),
+    );
   },
 });

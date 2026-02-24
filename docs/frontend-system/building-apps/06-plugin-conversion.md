@@ -2,7 +2,6 @@
 id: plugin-conversion
 title: Converting 3rd-party plugins from the old system
 sidebar_label: Converting 3rd-party Plugins
-# prettier-ignore
 description: Documentation for how to convert 3rd-party plugins to support the new frontend system.
 ---
 
@@ -43,7 +42,7 @@ The conversion functions such as `convertLegacyPageExtension` will attempt to in
 ```ts
 const convertedIndexPage = convertLegacyPageExtension(TechDocsIndexPage, {
   name: 'index',
-  defaultPath: '/docs',
+  path: '/docs',
 });
 ```
 
@@ -73,10 +72,10 @@ const convertedTechdocsPlugin = convertLegacyPlugin(techdocsPlugin, {
   extensions: [
     convertLegacyPageExtension(TechDocsIndexPage, {
       name: 'index',
-      defaultPath: '/docs',
+      path: '/docs',
     }),
     convertLegacyPageExtension(TechDocsReaderPage, {
-      defaultPath: '/docs/:namespace/:kind/:name/*',
+      path: '/docs/:namespace/:kind/:name/*',
     }),
     convertLegacyEntityContentExtension(EntityTechdocsContent),
   ],

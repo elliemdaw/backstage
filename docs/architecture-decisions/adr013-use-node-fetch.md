@@ -1,7 +1,6 @@
 ---
 id: adrs-adr013
 title: 'ADR013: [superseded] Proper use of HTTP fetching libraries'
-# prettier-ignore
 description: Architecture Decision Record (ADR) for the proper use of fetchApiRef, node-fetch, and cross-fetch for data fetching.
 ---
 
@@ -33,7 +32,7 @@ const users = await response.json();
 ```
 
 Frontend plugins and packages should prefer to use the
-[`fetchApiRef`](https://backstage.io/docs/reference/core-plugin-api.fetchapiref).
+[`fetchApiRef`](https://backstage.io/api/stable/variables/_backstage_core-plugin-api.index.fetchApiRef.html).
 It uses `cross-fetch` internally. Example:
 
 ```ts

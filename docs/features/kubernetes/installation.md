@@ -75,7 +75,7 @@ Backstage app.
 If either existing
 [cluster locators](https://backstage.io/docs/features/kubernetes/configuration#clusterlocatormethods)
 don't work for your use-case, it is possible to implement a custom
-[KubernetesClustersSupplier](https://backstage.io/docs/reference/plugin-kubernetes-backend.kubernetesclusterssupplier).
+[KubernetesClustersSupplier](https://backstage.io/api/stable/interfaces/_backstage_plugin-kubernetes-node.KubernetesClustersSupplier.html).
 
 Here's a very simplified example:
 
@@ -87,6 +87,7 @@ import {
   ClusterDetails,
   KubernetesClustersSupplier,
   kubernetesClusterSupplierExtensionPoint,
+  kubernetesServiceLocatorExtensionPoint,
 } from '@backstage/plugin-kubernetes-node';
 
 export class CustomClustersSupplier implements KubernetesClustersSupplier {
@@ -119,11 +120,25 @@ export const kubernetesModuleCustomClusterDiscovery = createBackendModule({
   register(env) {
     env.registerInit({
       deps: {
-        kubernetes: kubernetesClusterSupplierExtensionPoint,
+        clusterSupplier: kubernetesClusterSupplierExtensionPoint,
+        serviceLocator: kubernetesServiceLocatorExtensionPoint,
       },
-      async init({ kubernetes }) {
-        kubernetes.addClusterSupplier(
+      async init({ clusterSupplier, serviceLocator }) {
+        // simple replace of the internal dependency
+        clusterSupplier.addClusterSupplier(
           CustomClustersSupplier.create(Duration.fromObject({ minutes: 60 })),
+        );
+
+        // there's also the ability to get access to some of the default implementations of the extension points where
+        // necessary:
+        serviceLocator.addServiceLocator(
+          async ({ getDefault, clusterSupplier }) => {
+            // get access to the default service locator:
+            const defaultImplementation = await getDefault();
+
+            // build your own with the clusterSupplier dependency:
+            return new MyNewServiceLocator({ clusterSupplier });
+          },
         );
       },
     });

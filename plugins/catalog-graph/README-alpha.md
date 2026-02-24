@@ -36,18 +36,18 @@ This plugin installation requires the following steps:
 1. Add the `@backstage/catalog-graph` dependency to your app `package.json` file and install it;
 2. In your application's configuration file, enable the catalog entity relations graphic card extension so that the card begins to be presented on the catalog entity page:
 
-```yaml
-# app-config.yaml
-app:
-  experimental:
-    # Auto discovering all plugins extensions
-    packages: all
-  extensions:
-    # This is required because the card is not enable by default once you install the plugin
-    - entity-card:catalog-graph/relations
-```
+   ```yaml
+   # app-config.yaml
+   app:
+     # Auto discovering all plugins extensions
+     packages: all
+     extensions:
+       # This is required because the card is not enable by default once you install the plugin
+       - entity-card:catalog-graph/relations
+   ```
 
 3. Then start the app, navigate to an entity's page and see the Relations graph there;
+
 4. By clicking on the "View Graph" card action, you will be redirected to the catalog entity relations page.
 
 ## Customization
@@ -64,11 +64,10 @@ _Enabling auto discovering the plugin extensions in production_
 # app-config.production.yaml
 # Overriding configurations for the local production environment
 app:
-  experimental:
-    packages:
-      # Only the following packages will be included
-      include:
-        - '@backstage/plugin-catalog-graph'
+  packages:
+    # Only the following packages will be included
+    include:
+      - '@backstage/plugin-catalog-graph'
 ```
 
 _Disabling auto discovering the plugin extensions in development_
@@ -77,11 +76,10 @@ _Disabling auto discovering the plugin extensions in development_
 # app-config.local.yaml
 # Overriding configurations for the local development environment
 app:
-  experimental:
-    packages:
-      # All but the following package will be included
-      exclude:
-        - '@backstage/plugin-catalog-graph'
+  packages:
+    # All but the following package will be included
+    exclude:
+      - '@backstage/plugin-catalog-graph'
 ```
 
 For more options of package configurations, see [this](https://backstage.io/docs/frontend-system/architecture/app/#feature-discovery) documentation.
@@ -134,7 +132,7 @@ An [entity card](https://backstage.io/docs/frontend-system/building-plugins/exte
 
 ##### Output
 
-A React component defined by the [coreExtensionData.reactElement](https://backstage.io/docs/reference/frontend-plugin-api.coreextensiondata/) type.
+A React component defined by the [coreExtensionData.reactElement](https://backstage.io/api/stable/variables/_backstage_frontend-plugin-api.index.coreExtensionData.html) type.
 
 ##### Inputs
 
@@ -198,25 +196,26 @@ Overriding the card extension allows you to modify how it is implemented.
 Here is an example overriding the card extension with a custom component:
 
 ```tsx
-import {
-  createFrontendModule,
-  createSchemaFromZod,
-} from '@backstage/backstage-plugin-api';
-import { createEntityCardExtension } from '@backstage/plugin-catalog-react/alpha';
+import { createFrontendModule } from '@backstage/backstage-plugin-api';
+import { EntityCardBlueprint } from '@backstage/plugin-catalog-react/alpha';
 
 export default createFrontendModule({
   pluginId: 'catalog-graph',
   extensions: [
-    createEntityCardExtension({
+    EntityCardBlueprint.makeWithOverrides({
       name: 'entity-relations',
-      configSchema: createSchemaFromZod(z =>
-        z.object({
-          filter: z.string().optional(),
+      config: {
+        schema: {
+          filter: z => z.string().optional(),
           // Omitting the rest of default configs for simplicity in this example
-        }),
-      ),
-      loader: () =>
-        import('./components').then(m => <m.MyEntityRelationsCard />),
+        },
+      },
+      factory(originalFactory, { config }) {
+        return originalFactory({
+          loader: () =>
+            import('./components').then(m => <m.MyEntityRelationsCard />),
+        });
+      },
     }),
   ],
 });
@@ -234,7 +233,7 @@ A [page](https://backstage.io/docs/reference/frontend-plugin-api.createapiextens
 
 ##### Output
 
-A React component defined by the [coreExtensionData.reactElement](https://backstage.io/docs/reference/frontend-plugin-api.coreextensiondata/) type.
+A React component defined by the [coreExtensionData.reactElement](https://backstage.io/api/stable/variables/_backstage_frontend-plugin-api.index.coreExtensionData.html) type.
 
 ##### Inputs
 
@@ -306,7 +305,7 @@ export default createFrontendModule({
   extensions: [
     createPageExtension({
       // Omitting name since it is an index page
-      defaultPath: '/catalog-graph',
+      path: '/catalog-graph',
       routeRef: convertLegacyRouteRef(catalogGraphRouteRef),
       createSchemaFromZod(z => z.object({
         path: z.string().default('/catalog-graph')

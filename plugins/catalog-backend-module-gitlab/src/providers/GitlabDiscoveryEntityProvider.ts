@@ -33,13 +33,14 @@ import { WebhookProjectSchema, WebhookPushEventSchema } from '@gitbeaker/rest';
 import * as uuid from 'uuid';
 import {
   GitLabClient,
+  GitLabGroup,
   GitLabProject,
   GitlabProviderConfig,
   paginated,
   readGitlabConfigs,
 } from '../lib';
 
-import * as path from 'path';
+import * as path from 'node:path';
 
 const TOPIC_REPO_PUSH = 'gitlab.push';
 
@@ -134,7 +135,7 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
     this.scheduleFn = this.createScheduleFn(options.taskRunner);
     this.events = options.events;
     this.gitLabClient = new GitLabClient({
-      config: this.integration.config,
+      integration: this.integration,
       logger: this.logger,
     });
   }
@@ -207,35 +208,16 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
       );
     }
 
-    const projects = paginated<GitLabProject>(
-      options => this.gitLabClient.listProjects(options),
-      {
-        group: this.config.group,
-        page: 1,
-        per_page: 50,
-        ...(!this.config.includeArchivedRepos && { archived: false }),
-        ...(this.config.membership && { membership: true }),
-        ...(this.config.topics && { topics: this.config.topics }),
-      },
+    this.logger.info(
+      `Refreshing Gitlab entity discovery using ${
+        this.config.useSearch ? 'search' : 'discovery'
+      } mode`,
     );
 
-    const res: Result = {
-      scanned: 0,
-      matches: [],
-    };
+    const locations = this.config.useSearch
+      ? await this.searchEntities()
+      : await this.getEntities();
 
-    for await (const project of projects) {
-      if (await this.shouldProcessProject(project, this.gitLabClient)) {
-        res.scanned++;
-        res.matches.push(project);
-      }
-    }
-
-    const locations = res.matches.map(p => this.createLocationSpec(p));
-
-    logger.info(
-      `Processed ${locations.length} from scanned ${res.scanned} projects.`,
-    );
     await this.connection.applyMutation({
       type: 'full',
       entities: locations.map(location => ({
@@ -243,6 +225,194 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
         entity: locationSpecToLocationEntity({ location }),
       })),
     });
+
+    logger.info(`Processed ${locations.length} locations`);
+  }
+
+  /**
+   * Determine the location on GitLab to be ingested.
+   * Uses GitLab's search API to find projects matching provided configuration.
+   *
+   * @returns A list of location to be ingested
+   */
+  private async searchEntities() {
+    const locations: LocationSpec[] = [];
+    let foundProjects = 0;
+
+    this.logger.info(`Using gitlab search API to lookup projects`);
+
+    const foundFiles = paginated(
+      options => this.gitLabClient.listFiles(options),
+      {
+        group: this.config.group,
+        search: `filename:${this.config.catalogFile}`,
+        page: 1,
+        per_page: 50,
+      },
+    );
+
+    for await (const foundFile of foundFiles) {
+      const project = await this.gitLabClient.getProjectById(
+        foundFile.project_id,
+      );
+      foundProjects++;
+
+      if (
+        project &&
+        this.isProjectCompliant(project) &&
+        this.isGroupCompliant(project.path_with_namespace)
+      ) {
+        locations.push(
+          this.createLocationSpecFromParams(
+            project.web_url,
+            foundFile.ref,
+            foundFile.path,
+          ),
+        );
+      }
+    }
+
+    this.logger.info(
+      `Processed ${locations.length} from ${foundProjects} found projects on API.`,
+    );
+
+    return locations;
+  }
+
+  /**
+   * Determine the location on GitLab to be ingested base on configured groups and filters.
+   *
+   * @returns A list of location to be ingested
+   */
+  private async getEntities() {
+    let res: Result = {
+      scanned: 0,
+      matches: [],
+    };
+
+    const groupToProcess = new Map<string, GitLabGroup>();
+    let groupFilters;
+
+    if (this.config.groupPattern !== undefined) {
+      const patterns = Array.isArray(this.config.groupPattern)
+        ? this.config.groupPattern
+        : [this.config.groupPattern];
+
+      if (patterns.length === 1 && patterns[0].source === '[\\s\\S]*') {
+        // if the pattern is a catch-all, we don't need to filter groups
+        groupFilters = new Array<RegExp>();
+      } else {
+        groupFilters = patterns;
+      }
+    }
+
+    if (groupFilters && groupFilters.length > 0) {
+      const groups = paginated<GitLabGroup>(
+        options => this.gitLabClient.listGroups(options),
+        {
+          page: 1,
+          per_page: 50,
+        },
+      );
+
+      for await (const group of groups) {
+        if (
+          groupFilters.some(groupFilter => groupFilter.test(group.full_path)) &&
+          !groupToProcess.has(group.full_path)
+        ) {
+          groupToProcess.set(group.full_path, group);
+        }
+      }
+
+      for (const group of groupToProcess.values()) {
+        const tmpRes = await this.getProjectsToProcess(group.full_path);
+        res.scanned += tmpRes.scanned;
+        // merge both arrays safely
+        for (const project of tmpRes.matches) {
+          res.matches.push(project);
+        }
+      }
+    } else {
+      res = await this.getProjectsToProcess(this.config.group);
+    }
+
+    const locations = this.deduplicateProjects(res.matches).map(p =>
+      this.createLocationSpec(p),
+    );
+
+    this.logger.info(
+      `Processed ${locations.length} from scanned ${res.scanned} projects.`,
+    );
+
+    return locations;
+  }
+
+  /**
+   * Deduplicate a list of projects based on their id.
+   *
+   * @param projects - a list of projects to be deduplicated
+   * @returns a list of projects with unique id
+   */
+  private deduplicateProjects(projects: GitLabProject[]): GitLabProject[] {
+    const uniqueProjects = new Map<number, GitLabProject>();
+
+    for (const project of projects) {
+      uniqueProjects.set(project.id, project);
+    }
+
+    return Array.from(uniqueProjects.values());
+  }
+
+  /**
+   * Retrieve a list of projects that match configuration.
+   *
+   * @param group - a full path of a GitLab group, can be empty
+   * @returns An array of project to be processed and the number of project scanned
+   */
+  private async getProjectsToProcess(group: string) {
+    const res: Result = {
+      scanned: 0,
+      matches: [],
+    };
+
+    const projects = paginated<GitLabProject>(
+      options => this.gitLabClient.listProjects(options),
+      {
+        group: group,
+        page: 1,
+        per_page: 50,
+        ...(!this.config.includeArchivedRepos && { archived: false }),
+        ...(this.config.membership && { membership: true }),
+        ...(this.config.topics && { topics: this.config.topics }),
+        // Only use simple=true when we don't need to skip forked repos.
+        // The simple=true parameter reduces response size by returning fewer fields,
+        // but it excludes the 'forked_from_project' field which is required for fork detection.
+        // Therefore, we can only optimize with simple=true when skipForkedRepos is false.
+        ...(!this.config.skipForkedRepos && { simple: true }),
+      },
+    );
+
+    for await (const project of projects) {
+      res.scanned++;
+
+      if (await this.shouldProcessProject(project, this.gitLabClient)) {
+        res.matches.push(project);
+      }
+    }
+
+    return res;
+  }
+
+  private createLocationSpecFromParams(
+    projectURL: string,
+    branch: string,
+    catalogFile: string,
+  ): LocationSpec {
+    return {
+      type: 'url',
+      target: `${projectURL}/-/blob/${branch}/${catalogFile}`,
+      presence: 'optional',
+    };
   }
 
   private createLocationSpec(project: GitLabProject): LocationSpec {
@@ -251,11 +421,11 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
       project.default_branch ??
       this.config.fallbackBranch;
 
-    return {
-      type: 'url',
-      target: `${project.web_url}/-/blob/${project_branch}/${this.config.catalogFile}`,
-      presence: 'optional',
-    };
+    return this.createLocationSpecFromParams(
+      project.web_url,
+      project_branch,
+      this.config.catalogFile,
+    );
   }
 
   /**
@@ -446,10 +616,7 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
       });
   }
 
-  private async shouldProcessProject(
-    project: GitLabProject,
-    client: GitLabClient,
-  ): Promise<boolean> {
+  private isProjectCompliant(project: GitLabProject): boolean {
     if (!this.config.projectPattern.test(project.path_with_namespace ?? '')) {
       this.logger.debug(
         `Skipping project ${project.path_with_namespace} as it does not match the project pattern ${this.config.projectPattern}.`,
@@ -484,17 +651,40 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
       return false;
     }
 
+    return true;
+  }
+
+  private async shouldProcessProject(
+    project: GitLabProject,
+    client: GitLabClient,
+  ): Promise<boolean> {
+    if (!this.isProjectCompliant(project)) {
+      return false;
+    }
+
     const project_branch =
       this.config.branch ??
       project.default_branch ??
       this.config.fallbackBranch;
 
     const hasFile = await client.hasFile(
-      project.path_with_namespace ?? '',
+      project.id,
       project_branch,
       this.config.catalogFile,
     );
 
     return hasFile;
+  }
+
+  private isGroupCompliant(name: string | undefined) {
+    const groupRegexes = Array.isArray(this.config.groupPattern)
+      ? this.config.groupPattern
+      : [this.config.groupPattern];
+
+    if (name) {
+      return groupRegexes.some(reg => reg.test(name));
+    }
+
+    return false;
   }
 }

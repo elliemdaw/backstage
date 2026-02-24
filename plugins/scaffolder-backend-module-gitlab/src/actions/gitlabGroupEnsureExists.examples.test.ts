@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-import { ConfigReader } from '@backstage/core-app-api';
 import { ScmIntegrations } from '@backstage/integration';
 import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 import yaml from 'yaml';
 import { createGitlabGroupEnsureExistsAction } from './gitlabGroupEnsureExists';
 import { examples } from './gitlabGroupEnsureExists.examples';
+import { mockServices } from '@backstage/backend-test-utils';
 
 const mockGitlabClient = {
   Groups: {
-    search: jest.fn(),
+    show: jest.fn(),
     create: jest.fn(),
   },
 };
@@ -44,21 +44,25 @@ describe('gitlab:group:ensureExists', () => {
   });
 
   it(`Should ${examples[0].description}`, async () => {
-    mockGitlabClient.Groups.search.mockResolvedValue([]);
+    mockGitlabClient.Groups.show.mockRejectedValue({
+      cause: { response: { status: 404 } },
+    });
     mockGitlabClient.Groups.create.mockResolvedValue({
       id: 3,
       full_path: 'group1',
     });
 
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://gitlab.com/api/v4',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://gitlab.com/api/v4',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);
@@ -73,33 +77,32 @@ describe('gitlab:group:ensureExists', () => {
     expect(mockGitlabClient.Groups.create).toHaveBeenCalledWith(
       'group1',
       'group1',
-      {},
+      { description: 'This is a top-level group' },
     );
 
     expect(mockContext.output).toHaveBeenCalledWith('groupId', 3);
   });
 
   it(`Should ${examples[1].description}`, async () => {
-    mockGitlabClient.Groups.search.mockResolvedValue([
-      {
-        id: 1,
-        full_path: 'group1',
-      },
-    ]);
+    mockGitlabClient.Groups.show
+      .mockResolvedValueOnce({ id: 1, full_path: 'group1' })
+      .mockRejectedValueOnce({ cause: { response: { status: 404 } } });
     mockGitlabClient.Groups.create.mockResolvedValue({
       id: 3,
       full_path: 'group1/group2',
     });
 
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://api.gitlab.com',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://api.gitlab.com',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);
@@ -123,30 +126,26 @@ describe('gitlab:group:ensureExists', () => {
   });
 
   it(`Should ${examples[2].description}`, async () => {
-    mockGitlabClient.Groups.search.mockResolvedValue([
-      {
-        id: 1,
-        full_path: 'group1',
-      },
-      {
-        id: 2,
-        full_path: 'group1/group2',
-      },
-    ]);
+    mockGitlabClient.Groups.show
+      .mockResolvedValueOnce({ id: 1, full_path: 'group1' })
+      .mockResolvedValueOnce({ id: 2, full_path: 'group1/group2' })
+      .mockRejectedValueOnce({ cause: { response: { status: 404 } } });
     mockGitlabClient.Groups.create.mockResolvedValue({
       id: 3,
       full_path: 'group1/group2/group3',
     });
 
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://api.gitlab.com',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://api.gitlab.com',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);
@@ -170,15 +169,17 @@ describe('gitlab:group:ensureExists', () => {
   });
 
   it(`Should ${examples[3].description}`, async () => {
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://api.gitlab.com',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://api.gitlab.com',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);
@@ -191,37 +192,33 @@ describe('gitlab:group:ensureExists', () => {
       input: yaml.parse(examples[3].example).steps[0].input,
     });
 
-    expect(mockGitlabClient.Groups.search).not.toHaveBeenCalled();
+    expect(mockGitlabClient.Groups.show).not.toHaveBeenCalled();
     expect(mockGitlabClient.Groups.create).not.toHaveBeenCalled();
 
     expect(mockContext.output).toHaveBeenCalledWith('groupId', 42);
   });
 
   it(`Should ${examples[4].description}`, async () => {
-    mockGitlabClient.Groups.search.mockResolvedValue([
-      {
-        id: 1,
-        full_path: 'group1',
-      },
-      {
-        id: 2,
-        full_path: 'group1/group2',
-      },
-    ]);
+    mockGitlabClient.Groups.show
+      .mockResolvedValueOnce({ id: 1, full_path: 'group1' })
+      .mockResolvedValueOnce({ id: 2, full_path: 'group1/group2' })
+      .mockRejectedValueOnce({ cause: { response: { status: 404 } } });
     mockGitlabClient.Groups.create.mockResolvedValue({
       id: 3,
       full_path: 'group1/group2/group3',
     });
 
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://api.gitlab.com',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://api.gitlab.com',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);
@@ -245,34 +242,27 @@ describe('gitlab:group:ensureExists', () => {
   });
 
   it(`Should ${examples[5].description}`, async () => {
-    mockGitlabClient.Groups.search.mockResolvedValue([
-      {
-        id: 1,
-        full_path: 'group1',
-      },
-      {
-        id: 2,
-        full_path: 'group1/group2',
-      },
-      {
-        id: 3,
-        full_path: 'group1/group2/group3',
-      },
-    ]);
+    mockGitlabClient.Groups.show
+      .mockResolvedValueOnce({ id: 1, full_path: 'group1' })
+      .mockResolvedValueOnce({ id: 2, full_path: 'group1/group2' })
+      .mockResolvedValueOnce({ id: 3, full_path: 'group1/group2/group3' })
+      .mockRejectedValueOnce({ cause: { response: { status: 404 } } });
     mockGitlabClient.Groups.create.mockResolvedValue({
       id: 4,
       full_path: 'group1/group2/group3/group4',
     });
 
-    const config = new ConfigReader({
-      integrations: {
-        gitlab: [
-          {
-            host: 'gitlab.com',
-            token: 'tokenlols',
-            apiBaseUrl: 'https://api.gitlab.com',
-          },
-        ],
+    const config = mockServices.rootConfig({
+      data: {
+        integrations: {
+          gitlab: [
+            {
+              host: 'gitlab.com',
+              token: 'tokenlols',
+              apiBaseUrl: 'https://api.gitlab.com',
+            },
+          ],
+        },
       },
     });
     const integrations = ScmIntegrations.fromConfig(config);

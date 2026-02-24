@@ -38,8 +38,11 @@ export interface Config {
        * Allow entities of these particular kinds.
        *
        * E.g. ["Component", "API", "Template", "Location"]
+       *
+       * You can also specify the type of the entity by using an object with `kind` and optional `spec.type` properties.
+       * E.g. [{ kind: "Component", 'spec.type': "service" }]
        */
-      allow: Array<string>;
+      allow: Array<string | { kind: string; 'spec.type'?: string }>;
       /**
        * Limit this rule to a specific location
        *
@@ -139,14 +142,14 @@ export interface Config {
     }>;
 
     /**
-     * Disables the compatibility layer for relations in returned entities that
+     * Enables the compatibility layer for relations in returned entities that
      * ensures that all relations objects have both `target` and `targetRef`.
      *
-     * Enabling this option significantly reduces the memory usage of the
-     * catalog, and slightly increases performance, but may break consumers that
+     * Enabling this option significantly increases the memory usage of the
+     * catalog, and slightly reduces performance, but may avoid breaking consumers that
      * rely on the existence of `target` in the relations objects.
      */
-    disableRelationsCompatibility?: boolean;
+    enableRelationsCompatibility?: boolean;
 
     /**
      * Disables the default backstage processors.
@@ -160,19 +163,19 @@ export interface Config {
     /**
      * The strategy to use for entities that are orphaned, i.e. no longer have
      * any other entities or providers referencing them. The default value is
-     * "keep".
+     * "delete".
      */
     orphanStrategy?: 'keep' | 'delete';
 
     /**
      * The strategy to use for entities that are referenced by providers that are orphaned,
      * i.e. entities with no providers currently configured in the catalog. The default value is
-     * "keep".
+     * "delete".
      */
     orphanProviderStrategy?: 'keep' | 'delete';
 
     /**
-     * The strategy to use when stitching together the final entities.
+     * The strategy to use when stitching together the final entities. The default mode is "deferred".
      */
     stitchingStrategy?:
       | {
@@ -220,17 +223,82 @@ export interface Config {
     processingInterval?: HumanDuration | false;
 
     /**
-     * Defines if the UrlReaderProcessor should always call the search method of the
-     * different UrlReaders.
-     *
-     * If set to false, the UrlReaderProcessor will use the legacy behavior that tries to
-     * parse a Git URL and calls search if there's wildcard patterns and readUrl otherwise.
-     *
-     * If set to true, the UrlReaderProcessor always call the search method and lets each UrlReader
-     * determine if it's a search pattern or not.
-     *
-     * This flag is temporary and will be enabled by default in future releases.
+     * Provider-specific additional configuration options.
      */
-    useUrlReadersSearch?: boolean;
+    providerOptions?: {
+      /**
+       * Key is the provider name, value is an object with additional configuration
+       */
+      [name: string]: {
+        /**
+         * Determines whether this provider is disabled or not. If not specified,
+         * defaults to false.
+         */
+        disabled?: boolean;
+      };
+    };
+
+    /**
+     * Processor-specific additional configuration options.
+     */
+    processorOptions?: {
+      /**
+       * Key is the processor name, value is an object with additional configuration
+       */
+      [name: string]: {
+        /**
+         * Determines whether this processor is disabled or not. If not specified,
+         * defaults to false.
+         */
+        disabled?: boolean;
+        /**
+         * The default priority is 20, and lower value means that the processor runs earlier.
+         */
+        priority?: number;
+      };
+    };
+
+    /**
+     * Settings that control what to do when receiving messages from the SCM
+     * events service.
+     *
+     * @defaultValue false
+     * @remarks
+     *
+     * This is primarily meant to affect builtin providers in the catalog
+     * backend such as the location handler, but other providers and processors
+     * may also read this configuration.
+     *
+     * If set to false, disable all handling of SCM events.
+     *
+     * If set to true, enable all default handling of SCM events. Note that the
+     * set of default handling can change over time.
+     *
+     * You can also configure individual handlers one by one.
+     */
+    scmEvents?:
+      | boolean
+      | {
+          /**
+           * Trigger refreshes (reprocessing) of entities that are affected by an
+           * SCM event. This may include source control file content changes,
+           * repository status changes, etc.
+           *
+           * @defaultValue true
+           */
+          refresh?: boolean;
+          /**
+           * Unregister entities that are deleted as a result of an SCM event.
+           *
+           * @defaultValue true
+           */
+          unregister?: boolean;
+          /**
+           * Move entities that are moved as a result of an SCM event.
+           *
+           * @defaultValue true
+           */
+          move?: boolean;
+        };
   };
 }

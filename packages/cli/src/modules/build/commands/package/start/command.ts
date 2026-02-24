@@ -17,12 +17,13 @@
 import { OptionValues } from 'commander';
 import { startPackage } from './startPackage';
 import { resolveLinkedWorkspace } from './resolveLinkedWorkspace';
-import { findRoleFromCommand } from '../../../../../lib/role';
+import { findRoleFromCommand } from '../../../lib/role';
 import { paths } from '../../../../../lib/paths';
 
 export async function command(opts: OptionValues): Promise<void> {
   await startPackage({
     role: await findRoleFromCommand(opts),
+    entrypoint: opts.entrypoint,
     targetDir: paths.targetDir,
     configPaths: opts.config as string[],
     checksEnabled: Boolean(opts.check),

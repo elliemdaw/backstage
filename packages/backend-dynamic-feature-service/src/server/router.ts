@@ -19,11 +19,11 @@ import {
   RootConfigService,
 } from '@backstage/backend-plugin-api';
 import express from 'express';
-import { createOpenApiRouter, spec } from '../schema/openapi';
-import { DynamicPluginProvider } from '@backstage/backend-dynamic-feature-service';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as url from 'url';
+import { createOpenApiRouter, spec } from '../schema/openapi/generated';
+import { DynamicPluginProvider } from '../manager/types';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as url from 'node:url';
 import { FrontendRemoteResolvers } from './frontendRemotesServer';
 import { Remote } from '../schema/openapi/generated/models';
 import { JsonObject } from '@backstage/types';

@@ -26,11 +26,15 @@ import {
   entityFilterExpressionDataRef,
   entityContentGroupDataRef,
   defaultEntityContentGroups,
+  entityContentIconDataRef,
 } from './extensionData';
-import { EntityPredicate } from '../predicates';
+import {
+  FilterPredicate,
+  createZodV3FilterPredicateSchema,
+} from '@backstage/filter-predicates';
 import { resolveEntityFilterData } from './resolveEntityFilterData';
-import { createEntityPredicateSchema } from '../predicates/createEntityPredicateSchema';
 import { Entity } from '@backstage/catalog-model';
+import { ReactElement } from 'react';
 
 /**
  * @alpha
@@ -47,58 +51,76 @@ export const EntityContentBlueprint = createExtensionBlueprint({
     entityFilterFunctionDataRef.optional(),
     entityFilterExpressionDataRef.optional(),
     entityContentGroupDataRef.optional(),
+    entityContentIconDataRef.optional(),
   ],
   dataRefs: {
     title: entityContentTitleDataRef,
     filterFunction: entityFilterFunctionDataRef,
     filterExpression: entityFilterExpressionDataRef,
     group: entityContentGroupDataRef,
+    icon: entityContentIconDataRef,
   },
   config: {
     schema: {
       path: z => z.string().optional(),
       title: z => z.string().optional(),
       filter: z =>
-        z.union([z.string(), createEntityPredicateSchema(z)]).optional(),
+        z.union([z.string(), createZodV3FilterPredicateSchema(z)]).optional(),
       group: z => z.literal(false).or(z.string()).optional(),
+      icon: z => z.string().optional(),
     },
   },
   *factory(
-    {
-      loader,
-      defaultPath,
-      defaultTitle,
-      defaultGroup,
-      filter,
-      routeRef,
-    }: {
+    params: {
+      /**
+       * @deprecated Use the `path` param instead.
+       */
+      defaultPath?: [Error: `Use the 'path' param instead`];
+      path: string;
+      /**
+       * @deprecated Use the `path` param instead.
+       */
+      defaultTitle?: [Error: `Use the 'title' param instead`];
+      title: string;
+      /**
+       * @deprecated Use the `path` param instead.
+       */
+      defaultGroup?: [Error: `Use the 'group' param instead`];
+      group?: keyof typeof defaultEntityContentGroups | (string & {});
+      icon?: string | ReactElement;
       loader: () => Promise<JSX.Element>;
-      defaultPath: string;
-      defaultTitle: string;
-      defaultGroup?: keyof typeof defaultEntityContentGroups | (string & {});
       routeRef?: RouteRef;
-      filter?: string | EntityPredicate | ((entity: Entity) => boolean);
+      filter?: string | FilterPredicate | ((entity: Entity) => boolean);
     },
     { node, config },
   ) {
-    const path = config.path ?? defaultPath;
-    const title = config.title ?? defaultTitle;
-    const group = config.group ?? defaultGroup;
+    // TODO(blam): Remove support for all the `default*` props in the future, this breaks backwards compatibility without it
+    // As this is marked as BREAKING ALPHA, it doesn't affect the public API so it falls in range and gets picked
+    // up by packages that depend on `catalog-react`.
+    const path = config.path ?? params.path ?? params.defaultPath;
+    const title = config.title ?? params.title ?? params.defaultTitle;
+    const icon = config.icon ?? params.icon;
+    const group = config.group ?? params.group ?? params.defaultGroup;
 
-    yield coreExtensionData.reactElement(ExtensionBoundary.lazy(node, loader));
+    yield coreExtensionData.reactElement(
+      ExtensionBoundary.lazy(node, params.loader),
+    );
 
     yield coreExtensionData.routePath(path);
 
     yield entityContentTitleDataRef(title);
 
-    if (routeRef) {
-      yield coreExtensionData.routeRef(routeRef);
+    if (params.routeRef) {
+      yield coreExtensionData.routeRef(params.routeRef);
     }
 
-    yield* resolveEntityFilterData(filter, config, node);
+    yield* resolveEntityFilterData(params.filter, config, node);
 
-    if (group) {
+    if (group && typeof group === 'string') {
       yield entityContentGroupDataRef(group);
+    }
+    if (icon) {
+      yield entityContentIconDataRef(icon);
     }
   },
 });

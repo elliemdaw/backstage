@@ -239,6 +239,26 @@ search:
 
 > You can also increase the batch size if you are using a large ES instance.
 
+### Elasticsearch batch key field
+
+By default, during bulk uploads with the Elasticsearch indexer, each document is assigned an auto-generated `_id` unless a `batchKeyField` is explicitly set. This configuration is optional and most users won’t need to customize it. However, if your use case involves frequent lookups or updates to existing documents, setting `batchKeyField` can be beneficial. It allows you to define a consistent identifier for each document, helping to streamline updates and prevent duplicate entries. Be aware that if the value provided for `batchKeyField` is not unique across documents, Elasticsearch will overwrite any existing document with the same `_id`.
+
+**Using `batchKeyField` (Custom `_id`)**
+
+```yaml
+search:
+  elasticsearch:
+    batchKeyField: document_id
+```
+
+**Default Behavior (Auto-generated `_id`)**
+
+```yaml
+search:
+  elasticsearch:
+    # No batchKeyField specified — Elasticsearch will autogenerate _id
+```
+
 ### Elasticsearch Index Name Customization
 
 By default, the Elasticsearch indexer creates index names based on their type, a separator, and the current date as a postfix. You can configure a custom prefix for all indices by adding the following section to your app configuration.
@@ -267,7 +287,69 @@ Fuzziness allows you to define the maximum Levenshtein distance, AUTO is the def
 ```yaml
 search:
   elasticsearch:
-    queryConfig:
+    queryOptions:
       fuzziness: AUTO
       prefixLength: 3;
 ```
+
+### Custom Authentication Extension Point
+
+For enterprise environments that require dynamic authentication mechanisms such as bearer tokens with automatic rotation, the Elasticsearch module provides an authentication extension point. This is useful when:
+
+- Using OAuth2/OIDC identity providers for service authentication
+- Tokens need to be refreshed automatically (e.g., tokens that expire hourly)
+- Integrating with internal identity services
+- Running Elasticsearch/OpenSearch clusters secured by token-based authentication
+
+To use custom authentication, create a backend module that provides an auth provider:
+
+```ts title="packages/backend/src/modules/elasticsearchAuth.ts"
+import { createBackendModule } from '@backstage/backend-plugin-api';
+import { elasticsearchAuthExtensionPoint } from '@backstage/plugin-search-backend-module-elasticsearch';
+
+export default createBackendModule({
+  pluginId: 'search',
+  moduleId: 'elasticsearch-custom-auth',
+  register(env) {
+    env.registerInit({
+      deps: {
+        elasticsearchAuth: elasticsearchAuthExtensionPoint,
+      },
+      async init({ elasticsearchAuth }) {
+        elasticsearchAuth.setAuthProvider({
+          async getAuthHeaders() {
+            // Fetch token from your identity service
+            const token = await myTokenService.getToken();
+            return { Authorization: `Bearer ${token}` };
+          },
+        });
+      },
+    });
+  },
+});
+```
+
+Then register this module in your backend:
+
+```ts title="packages/backend/src/index.ts"
+const backend = createBackend();
+
+// Other plugins...
+
+backend.add(import('@backstage/plugin-search-backend'));
+backend.add(import('@backstage/plugin-search-backend-module-elasticsearch'));
+
+/* highlight-add-start */
+backend.add(import('./modules/elasticsearchAuth'));
+/* highlight-add-end */
+
+backend.start();
+```
+
+The `getAuthHeaders` method is called before each request, allowing for just-in-time token retrieval and automatic rotation. When an auth provider is configured, it takes precedence over any static authentication in `app-config.yaml`.
+
+:::note Note
+
+Custom authentication is supported for the `elastic`, `opensearch`, and default providers. The `aws` provider uses AWS SigV4 request signing and does not support custom auth providers.
+
+:::

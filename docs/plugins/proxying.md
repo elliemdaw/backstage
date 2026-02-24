@@ -4,6 +4,8 @@ title: Proxying
 description: Documentation on Proxying
 ---
 
+This page describes how to configure and use the built-in HTTP proxy functionality in your Backstage backend.
+
 ## Overview
 
 The Backstage backend comes packaged with a basic HTTP proxy, that can aid in
@@ -139,6 +141,9 @@ registered in this manner.
 Example:
 
 ```ts
+import { createBackendModule } from '@backstage/backend-plugin-api';
+import { proxyEndpointsExtensionPoint } from '@backstage/plugin-proxy-node/alpha';
+
 backend.add(
   createBackendModule({
     pluginId: 'proxy',

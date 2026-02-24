@@ -54,6 +54,12 @@ export function createSentryCreateProjectAction(options: { config: Config }) {
                 'Optional slug for the new project. If not provided a slug is generated from the name',
             })
             .optional(),
+        platform: z =>
+          z
+            .string({
+              description: 'Optional sentry platform for the new project. ',
+            })
+            .optional(),
         authToken: z =>
           z
             .string({
@@ -61,10 +67,25 @@ export function createSentryCreateProjectAction(options: { config: Config }) {
                 'authenticate via bearer auth token. Requires scope: project:write',
             })
             .optional(),
+        apiBaseUrl: z =>
+          z
+            .string({
+              description:
+                'Optional base URL for the Sentry API. e.g. https://sentry.io/api/0',
+            })
+            .optional(),
       },
     },
     async handler(ctx) {
-      const { organizationSlug, teamSlug, name, slug, authToken } = ctx.input;
+      const {
+        organizationSlug,
+        teamSlug,
+        name,
+        slug,
+        platform,
+        authToken,
+        apiBaseUrl,
+      } = ctx.input;
 
       const body: any = {
         name: name,
@@ -72,6 +93,10 @@ export function createSentryCreateProjectAction(options: { config: Config }) {
 
       if (slug) {
         body.slug = slug;
+      }
+
+      if (platform) {
+        body.platform = platform;
       }
 
       const token = authToken
@@ -82,11 +107,16 @@ export function createSentryCreateProjectAction(options: { config: Config }) {
         throw new InputError(`No valid sentry token given`);
       }
 
+      const baseUrl =
+        apiBaseUrl ||
+        config.getOptionalString('scaffolder.sentry.apiBaseUrl') ||
+        'https://sentry.io/api/0';
+
       const { result } = await ctx.checkpoint({
         key: `create.project.${organizationSlug}.${teamSlug}`,
         fn: async () => {
           const response = await fetch(
-            `https://sentry.io/api/0/teams/${organizationSlug}/${teamSlug}/projects/`,
+            `${baseUrl}/teams/${organizationSlug}/${teamSlug}/projects/`,
             {
               method: 'POST',
               headers: {

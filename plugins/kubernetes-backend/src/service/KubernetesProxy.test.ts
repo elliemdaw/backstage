@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-import 'buffer';
-import { resolve as resolvePath } from 'path';
+import 'node:buffer';
+import { resolve as resolvePath } from 'node:path';
 import {
   createMockDirectory,
   mockServices,
   registerMswTestHooks,
 } from '@backstage/backend-test-utils';
 import { NotFoundError } from '@backstage/errors';
-import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import {
   ANNOTATION_KUBERNETES_AUTH_PROVIDER,
   KubernetesRequestAuth,
@@ -30,7 +29,7 @@ import {
 import { getMockReq, getMockRes } from '@jest-mock/express';
 import express from 'express';
 import Router from 'express-promise-router';
-import { Server } from 'http';
+import { Server } from 'node:http';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
 import request from 'supertest';
@@ -38,11 +37,11 @@ import { AddressInfo, WebSocket, WebSocketServer } from 'ws';
 
 import { LocalKubectlProxyClusterLocator } from '../cluster-locator/LocalKubectlProxyLocator';
 import {
+  ClusterDetails,
+  KubernetesClustersSupplier,
   AuthenticationStrategy,
-  AnonymousStrategy,
   KubernetesCredential,
-} from '../auth';
-import { ClusterDetails, KubernetesClustersSupplier } from '../types/types';
+} from '@backstage/plugin-kubernetes-node';
 import {
   APPLICATION_JSON,
   HEADER_KUBERNETES_AUTH,
@@ -53,6 +52,7 @@ import {
 import type { Request } from 'express';
 import { BackstageCredentials } from '@backstage/backend-plugin-api';
 import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
+import { AnonymousStrategy } from '../auth';
 
 const middleware = MiddlewareFactory.create({
   logger: mockServices.logger.mock(),
@@ -78,8 +78,8 @@ describe('KubernetesProxy', () => {
     >(),
   };
 
-  const permissionApi = mockServices.permissions.mock();
-  const mockDisocveryApi = mockServices.discovery.mock();
+  const permissionApi = mockServices.permissions();
+  const mockDiscoveryApi = mockServices.discovery.mock();
 
   registerMswTestHooks(worker);
 
@@ -154,11 +154,9 @@ describe('KubernetesProxy', () => {
       logger,
       clusterSupplier,
       authStrategy,
-      discovery: mockDisocveryApi,
+      discovery: mockDiscoveryApi,
+      httpAuth: mockServices.httpAuth.mock(),
     });
-    permissionApi.authorize.mockResolvedValue([
-      { result: AuthorizeResult.ALLOW },
-    ]);
   });
 
   it('should return a ERROR_NOT_FOUND if no clusters are found', async () => {
@@ -544,7 +542,8 @@ describe('KubernetesProxy', () => {
       logger: mockServices.logger.mock(),
       clusterSupplier: clusterSupplier,
       authStrategy: strategy,
-      discovery: mockDisocveryApi,
+      discovery: mockDiscoveryApi,
+      httpAuth: mockServices.httpAuth.mock(),
     });
 
     worker.use(
@@ -666,7 +665,8 @@ describe('KubernetesProxy', () => {
       logger: mockServices.logger.mock(),
       clusterSupplier: new LocalKubectlProxyClusterLocator(),
       authStrategy: new AnonymousStrategy(),
-      discovery: mockDisocveryApi,
+      discovery: mockDiscoveryApi,
+      httpAuth: mockServices.httpAuth.mock(),
     });
 
     worker.use(

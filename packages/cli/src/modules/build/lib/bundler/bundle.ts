@@ -16,8 +16,8 @@
 
 import yn from 'yn';
 import fs from 'fs-extra';
-import { resolve as resolvePath } from 'path';
-import webpack from 'webpack';
+import { resolve as resolvePath } from 'node:path';
+import { rspack, Configuration, MultiStats } from '@rspack/core';
 import {
   measureFileSizesBeforeBuild,
   printFileSizesAfterBuild,
@@ -28,6 +28,7 @@ import { BuildOptions } from './types';
 import { resolveBundlingPaths, resolveOptionalBundlingPaths } from './paths';
 import chalk from 'chalk';
 import { createDetectedModulesEntryPoint } from './packageDetection';
+import { createRuntimeSharedDependenciesEntryPoint } from './moduleFederation';
 
 // TODO(Rugvip): Limits from CRA, we might want to tweak these though.
 const WARN_AFTER_BUNDLE_GZIP_SIZE = 512 * 1024;
@@ -38,7 +39,7 @@ function applyContextToError(error: string, moduleName: string): string {
 }
 
 export async function buildBundle(options: BuildOptions) {
-  const { statsJsonEnabled, schema: configSchema, rspack } = options;
+  const { statsJsonEnabled, schema: configSchema, webpack } = options;
 
   const paths = resolveBundlingPaths(options);
   const publicPaths = await resolveOptionalBundlingPaths({
@@ -54,9 +55,8 @@ export async function buildBundle(options: BuildOptions) {
     getFrontendAppConfigs: () => options.frontendAppConfigs,
   };
 
-  const configs: webpack.Configuration[] = [];
-
-  if (options.moduleFederation?.mode === 'remote') {
+  const configs: Configuration[] = [];
+  if (options.moduleFederationRemote) {
     // Package detection is disabled for remote bundles
     configs.push(await createConfig(paths, commonConfigOptions));
   } else {
@@ -65,10 +65,18 @@ export async function buildBundle(options: BuildOptions) {
       targetPath: paths.targetPath,
     });
 
+    const moduleFederationSharedDependenciesEntryPoint =
+      await createRuntimeSharedDependenciesEntryPoint({
+        targetPath: paths.targetPath,
+      });
+
     configs.push(
       await createConfig(paths, {
         ...commonConfigOptions,
-        additionalEntryPoints: detectedModulesEntryPoint,
+        additionalEntryPoints: [
+          ...detectedModulesEntryPoint,
+          ...moduleFederationSharedDependenciesEntryPoint,
+        ],
         appMode: publicPaths ? 'protected' : 'public',
       }),
     );
@@ -119,13 +127,11 @@ export async function buildBundle(options: BuildOptions) {
     );
   }
 
-  if (rspack) {
-    console.log(
-      chalk.yellow(`⚠️  WARNING: Using experimental RSPack bundler.`),
-    );
+  if (webpack) {
+    console.log(chalk.yellow(`⚠️  WARNING: Using legacy WebPack bundler`));
   }
 
-  const { stats } = await build(configs, isCi, rspack);
+  const { stats } = await build(configs, isCi, webpack);
 
   if (!stats) {
     throw new Error('No stats returned');
@@ -159,34 +165,32 @@ export async function buildBundle(options: BuildOptions) {
 }
 
 async function build(
-  configs: webpack.Configuration[],
+  configs: Configuration[],
   isCi: boolean,
-  rspack?: typeof import('@rspack/core').rspack,
+  webpack?: typeof import('webpack'),
 ) {
-  const bundler = (rspack ?? webpack) as typeof webpack;
+  const bundler = (webpack ?? rspack) as typeof rspack;
 
-  const stats = await new Promise<webpack.MultiStats | undefined>(
-    (resolve, reject) => {
-      bundler(configs, (err, buildStats) => {
-        if (err) {
-          if (err.message) {
-            const { errors } = formatWebpackMessages({
-              errors: [err.message],
-              warnings: new Array<string>(),
-              _showErrors: true,
-              _showWarnings: true,
-            });
+  const stats = await new Promise<MultiStats | undefined>((resolve, reject) => {
+    bundler(configs, (err, buildStats) => {
+      if (err) {
+        if (err.message) {
+          const { errors } = formatWebpackMessages({
+            errors: [err.message],
+            warnings: new Array<string>(),
+            _showErrors: true,
+            _showWarnings: true,
+          });
 
-            throw new Error(errors[0]);
-          } else {
-            reject(err);
-          }
+          throw new Error(errors[0]);
         } else {
-          resolve(buildStats);
+          reject(err);
         }
-      });
-    },
-  );
+      } else {
+        resolve(buildStats);
+      }
+    });
+  });
 
   if (!stats) {
     throw new Error('Failed to compile: No stats provided');

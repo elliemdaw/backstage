@@ -28,7 +28,7 @@ import type * as OpenApiPlugin from 'docusaurus-plugin-openapi-docs';
 const backstageTheme = themes.vsDark;
 backstageTheme.plain.backgroundColor = '#232323';
 
-const useVersionedDocs = require('fs').existsSync('versions.json');
+const useVersionedDocs = require('node:fs').existsSync('versions.json');
 
 // This patches the redirect plugin to ignore the error when it tries to override existing fields.
 // This lets us add redirects that only apply to the next docs, while the stable docs still contain the source path.
@@ -86,7 +86,23 @@ const config: Config = {
     repoUrl: 'https://github.com/backstage/backstage',
   },
   onBrokenLinks: 'log',
-  onBrokenMarkdownLinks: 'log',
+  future: {
+    v4: {
+      removeLegacyPostBuildHeadAttribute: true,
+    },
+    experimental_faster: {
+      swcJsLoader: true,
+      swcJsMinimizer: true,
+      lightningCssMinimizer: true,
+      rspackBundler: true,
+      mdxCrossCompilerCache: true,
+      rspackPersistentCache: true,
+      // TODO: React has an issue with server rendering here.
+      // ssgWorkerThreads: true,
+      // TODO: This prints extra warnings in the console, add back when we have a fix.
+      // swcHtmlMinimizer: true,
+    },
+  },
   presets: [
     [
       '@docusaurus/preset-classic',
@@ -152,26 +168,24 @@ const config: Config = {
       return removeHtmlComments(fileContent);
     },
     format: 'detect',
-  },
-  webpack: {
-    jsLoader: isServer => ({
-      loader: require.resolve('swc-loader'),
-      options: {
-        jsc: {
-          parser: {
-            syntax: 'typescript',
-            tsx: true,
-          },
-          target: 'es2017',
-        },
-        module: {
-          type: isServer ? 'commonjs' : 'es6',
-        },
-      },
-    }),
+    hooks: {
+      onBrokenMarkdownLinks: 'log',
+    },
   },
   plugins: [
     'docusaurus-plugin-sass',
+    function disableExpensiveBundlerOptimizationPlugin() {
+      return {
+        name: 'disable-expensive-bundler-optimizations',
+        configureWebpack(_config) {
+          return {
+            optimization: {
+              concatenateModules: false,
+            },
+          };
+        },
+      };
+    },
     () => ({
       name: 'yaml-loader',
       configureWebpack() {
@@ -269,6 +283,14 @@ const config: Config = {
             from: '/docs/plugins/url-reader/',
             to: '/docs/backend-system/core-services/url-reader',
           },
+          {
+            from: '/docs/getting-started/app-custom-theme',
+            to: '/docs/conf/user-interface',
+          },
+          {
+            from: '/docs/plugins/existing-plugins',
+            to: '/docs/plugins/',
+          },
         ],
       }),
     [
@@ -296,6 +318,11 @@ const config: Config = {
             ...defaultOpenApiOptions,
             specPath: '../plugins/search-backend/src/schema/openapi.yaml',
             outputDir: '../docs/features/search/api',
+          } satisfies OpenApiPlugin.Options,
+          scaffolder: {
+            ...defaultOpenApiOptions,
+            specPath: '../plugins/scaffolder-backend/src/schema/openapi.yaml',
+            outputDir: '../docs/features/software-templates/api',
           } satisfies OpenApiPlugin.Options,
         },
       },
@@ -354,16 +381,6 @@ const config: Config = {
       },
       items: [
         {
-          href: 'https://github.com/backstage/backstage',
-          label: 'GitHub',
-          position: 'left',
-        },
-        {
-          href: 'https://discord.gg/backstage-687207715902193673',
-          label: 'Discord',
-          position: 'left',
-        },
-        {
           to: 'docs/overview/what-is-backstage',
           label: 'Docs',
           position: 'left',
@@ -374,13 +391,30 @@ const config: Config = {
           position: 'left',
         },
         {
-          to: '/blog',
-          label: 'Blog',
+          type: 'dropdown',
+          label: 'Reference',
           position: 'left',
+          items: [
+            {
+              label: `Stable (${releases[0]})`,
+              href: 'https://backstage.io/api/stable',
+              target: '_self',
+            },
+            {
+              label: 'Next',
+              href: 'https://backstage.io/api/next',
+              target: '_self',
+            },
+          ],
         },
         {
           to: `docs/releases/${releases[0]}`,
           label: 'Releases',
+          position: 'left',
+        },
+        {
+          to: '/blog',
+          label: 'Blog',
           position: 'left',
         },
         {
@@ -392,6 +426,18 @@ const config: Config = {
           to: '/community',
           label: 'Community',
           position: 'left',
+        },
+        {
+          href: 'https://github.com/backstage/backstage',
+          position: 'right',
+          className: 'header-github-link',
+          'aria-label': 'GitHub repository',
+        },
+        {
+          href: 'https://discord.gg/backstage-687207715902193673',
+          position: 'right',
+          className: 'header-discord-link',
+          'aria-label': 'Discord community',
         },
         ...(useVersionedDocs
           ? [
@@ -458,7 +504,7 @@ const config: Config = {
             },
             {
               label: 'Subscribe to our newsletter',
-              to: 'https://info.backstage.spotify.com/newsletter_subscribe',
+              to: 'https://spoti.fi/backstagenewsletter',
             },
             {
               label: 'CNCF Incubation',
@@ -483,7 +529,7 @@ const config: Config = {
       copyright: `<p style="text-align:center"><a href="https://spotify.github.io/">Made with ❤️ at Spotify</a></p><p class="copyright">Copyright © ${new Date().getFullYear()} Backstage Project Authors. All rights reserved. The Linux Foundation has registered trademarks and uses trademarks. For a list of trademarks of The Linux Foundation, please see our Trademark Usage page: <a href="https://www.linuxfoundation.org/trademark-usage" />https://www.linuxfoundation.org/trademark-usage</a></p>`,
     },
     algolia: {
-      apiKey: '1f0ba86672ccfc3576faa94583e5b318',
+      apiKey: '60d2643a9c6306463f15f8c3556e7f2e', // Owned by @Rugvip
       indexName: 'crawler_Backstage Docusaurus 2',
       appId: 'JCMFNHCHI8',
       searchParameters: {},

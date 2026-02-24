@@ -18,17 +18,19 @@ import { compatWrapper } from '@backstage/core-compat-api';
 import { BackstagePlugin, getComponentData } from '@backstage/core-plugin-api';
 import { ExtensionDefinition } from '@backstage/frontend-plugin-api';
 import { ComponentType } from 'react';
-import { EntityCardBlueprint } from '../blueprints';
+import { EntityCardBlueprint } from '../blueprints/EntityCardBlueprint';
 import kebabCase from 'lodash/kebabCase';
-import { EntityPredicate } from '../predicates';
+import { FilterPredicate } from '@backstage/filter-predicates';
 import { Entity } from '@backstage/catalog-model';
+import { EntityCardType } from '../blueprints/extensionData';
 
 /** @alpha */
 export function convertLegacyEntityCardExtension(
   LegacyExtension: ComponentType<{}>,
   overrides?: {
     name?: string;
-    filter?: string | EntityPredicate | ((entity: Entity) => boolean);
+    filter?: string | FilterPredicate | ((entity: Entity) => boolean);
+    type?: EntityCardType;
   },
 ): ExtensionDefinition {
   const element = <LegacyExtension />;
@@ -63,6 +65,7 @@ export function convertLegacyEntityCardExtension(
     params: {
       filter: overrides?.filter,
       loader: async () => compatWrapper(element),
+      type: overrides?.type,
     },
   });
 }

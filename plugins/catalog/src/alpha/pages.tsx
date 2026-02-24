@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-import {
-  compatWrapper,
-  convertLegacyRouteRef,
-} from '@backstage/core-compat-api';
+import { convertLegacyRouteRef } from '@backstage/core-compat-api';
 import {
   coreExtensionData,
   createExtensionInput,
@@ -28,11 +25,13 @@ import {
   entityRouteRef,
 } from '@backstage/plugin-catalog-react';
 import {
-  EntityHeaderBlueprint,
+  defaultEntityContentGroupDefinitions,
   EntityContentBlueprint,
-  defaultEntityContentGroups,
   EntityContextMenuItemBlueprint,
+  EntityHeaderBlueprint,
+  EntityContentGroupDefinitions,
 } from '@backstage/plugin-catalog-react/alpha';
+import CategoryIcon from '@material-ui/icons/Category';
 import { rootRouteRef } from '../routes';
 import { useEntityFromUrl } from '../components/CatalogEntityPage/useEntityFromUrl';
 import { buildFilterFn } from './filter/FilterWrapper';
@@ -41,16 +40,38 @@ export const catalogPage = PageBlueprint.makeWithOverrides({
   inputs: {
     filters: createExtensionInput([coreExtensionData.reactElement]),
   },
-  factory(originalFactory, { inputs }) {
+  config: {
+    schema: {
+      pagination: z =>
+        z
+          .union([
+            z.boolean(),
+            z.object({
+              mode: z.enum(['cursor', 'offset']),
+              limit: z.number().optional(),
+              offset: z.number().optional(),
+            }),
+          ])
+          .default(true),
+    },
+  },
+  factory(originalFactory, { inputs, config }) {
     return originalFactory({
-      defaultPath: '/catalog',
-      routeRef: convertLegacyRouteRef(rootRouteRef),
+      path: '/catalog',
+      routeRef: rootRouteRef,
+      icon: <CategoryIcon />,
+      title: 'Catalog',
       loader: async () => {
         const { BaseCatalogPage } = await import('../components/CatalogPage');
         const filters = inputs.filters.map(filter =>
           filter.get(coreExtensionData.reactElement),
         );
-        return compatWrapper(<BaseCatalogPage filters={<>{filters}</>} />);
+        return (
+          <BaseCatalogPage
+            filters={<>{filters}</>}
+            pagination={config.pagination}
+          />
+        );
       },
     });
   },
@@ -59,10 +80,10 @@ export const catalogPage = PageBlueprint.makeWithOverrides({
 export const catalogEntityPage = PageBlueprint.makeWithOverrides({
   name: 'entity',
   inputs: {
-    header: createExtensionInput(
-      [EntityHeaderBlueprint.dataRefs.element.optional()],
-      { singleton: true, optional: true },
-    ),
+    headers: createExtensionInput([
+      EntityHeaderBlueprint.dataRefs.element.optional(),
+      EntityHeaderBlueprint.dataRefs.filterFunction.optional(),
+    ]),
     contents: createExtensionInput([
       coreExtensionData.reactElement,
       coreExtensionData.routePath,
@@ -71,6 +92,7 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
       EntityContentBlueprint.dataRefs.filterFunction.optional(),
       EntityContentBlueprint.dataRefs.filterExpression.optional(),
       EntityContentBlueprint.dataRefs.group.optional(),
+      EntityContentBlueprint.dataRefs.icon.optional(),
     ]),
     contextMenuItems: createExtensionInput([
       coreExtensionData.reactElement,
@@ -81,14 +103,30 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
     schema: {
       groups: z =>
         z
-          .array(z.record(z.string(), z.object({ title: z.string() })))
+          .array(
+            z.record(
+              z.string(),
+              z.object({
+                title: z.string(),
+                icon: z.string().optional(),
+              }),
+            ),
+          )
           .optional(),
+      showNavItemIcons: z => z.boolean().optional().default(false),
     },
   },
   factory(originalFactory, { config, inputs }) {
     return originalFactory({
-      defaultPath: '/catalog/:namespace/:kind/:name',
-      routeRef: convertLegacyRouteRef(entityRouteRef),
+      path: '/catalog/:namespace/:kind/:name',
+      title: 'Catalog Entity',
+      // NOTE: The `convertLegacyRouteRef` call here ensures that this route ref
+      // is mutated to support the new frontend system. Removing this conversion
+      // is a potentially breaking change since this is a singleton and the
+      // route refs from `core-plugin-api` used to not support the new format.
+      // This shouldn't be removed until we completely deprecate the
+      // `core-compat-api` package.
+      routeRef: convertLegacyRouteRef(entityRouteRef), // READ THE ABOVE
       loader: async () => {
         const { EntityLayout } = await import('./components/EntityLayout');
 
@@ -99,48 +137,25 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
             (() => true),
         }));
 
-        type Groups = Record<
-          string,
-          { title: string; items: Array<(typeof inputs.contents)[0]> }
-        >;
+        // Get available headers, sorted by if they have a filter function or not.
+        // TODO(blam): we should really have priority or some specificity here which can be used to sort the headers.
+        // That can be done with embedding the priority in the dataRef alongside the filter function.
+        const headers = inputs.headers
+          .map(header => ({
+            element: header.get(EntityHeaderBlueprint.dataRefs.element),
+            filter: header.get(EntityHeaderBlueprint.dataRefs.filterFunction),
+          }))
+          .sort((a, b) => {
+            if (a.filter && !b.filter) return -1;
+            if (!a.filter && b.filter) return 1;
+            return 0;
+          });
 
-        const header = inputs.header?.get(
-          EntityHeaderBlueprint.dataRefs.element,
-        );
-
-        let groups = Object.entries(defaultEntityContentGroups).reduce<Groups>(
-          (rest, group) => {
-            const [groupId, groupValue] = group;
-            return {
-              ...rest,
-              [groupId]: { title: groupValue, items: [] },
-            };
-          },
-          {},
-        );
-
-        // config groups override default groups
-        if (config.groups) {
-          groups = config.groups.reduce<Groups>((rest, group) => {
-            const [groupId, groupValue] = Object.entries(group)[0];
-            return {
-              ...rest,
-              [groupId]: { title: groupValue.title, items: [] },
-            };
-          }, {});
-        }
-
-        for (const output of inputs.contents) {
-          const itemId = output.node.spec.id;
-          const itemTitle = output.get(EntityContentBlueprint.dataRefs.title);
-          const itemGroup = output.get(EntityContentBlueprint.dataRefs.group);
-          const group = itemGroup && groups[itemGroup];
-          if (!group) {
-            groups[itemId] = { title: itemTitle, items: [output] };
-            continue;
-          }
-          group.items.push(output);
-        }
+        const groupDefinitions =
+          config.groups?.reduce(
+            (rest, group) => ({ ...rest, ...group }),
+            {} as EntityContentGroupDefinitions,
+          ) ?? defaultEntityContentGroupDefinitions;
 
         const Component = () => {
           const entityFromUrl = useEntityFromUrl();
@@ -149,38 +164,43 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
             ? menuItems.filter(i => i.filter(entity)).map(i => i.element)
             : [];
 
+          const header = headers.find(
+            h => !h.filter || h.filter(entity!),
+          )?.element;
+
           return (
             <AsyncEntityProvider {...entityFromUrl}>
               <EntityLayout
                 header={header}
                 contextMenuItems={filteredMenuItems}
+                groupDefinitions={groupDefinitions}
+                showNavItemIcons={config.showNavItemIcons}
               >
-                {Object.values(groups).flatMap(({ title, items }) =>
-                  items.map(output => (
-                    <EntityLayout.Route
-                      group={title}
-                      key={output.get(coreExtensionData.routePath)}
-                      path={output.get(coreExtensionData.routePath)}
-                      title={output.get(EntityContentBlueprint.dataRefs.title)}
-                      if={buildFilterFn(
-                        output.get(
-                          EntityContentBlueprint.dataRefs.filterFunction,
-                        ),
-                        output.get(
-                          EntityContentBlueprint.dataRefs.filterExpression,
-                        ),
-                      )}
-                    >
-                      {output.get(coreExtensionData.reactElement)}
-                    </EntityLayout.Route>
-                  )),
-                )}
+                {inputs.contents.map(output => (
+                  <EntityLayout.Route
+                    group={output.get(EntityContentBlueprint.dataRefs.group)}
+                    key={output.get(coreExtensionData.routePath)}
+                    path={output.get(coreExtensionData.routePath)}
+                    title={output.get(EntityContentBlueprint.dataRefs.title)}
+                    icon={output.get(EntityContentBlueprint.dataRefs.icon)}
+                    if={buildFilterFn(
+                      output.get(
+                        EntityContentBlueprint.dataRefs.filterFunction,
+                      ),
+                      output.get(
+                        EntityContentBlueprint.dataRefs.filterExpression,
+                      ),
+                    )}
+                  >
+                    {output.get(coreExtensionData.reactElement)}
+                  </EntityLayout.Route>
+                ))}
               </EntityLayout>
             </AsyncEntityProvider>
           );
         };
 
-        return compatWrapper(<Component />);
+        return <Component />;
       },
     });
   },

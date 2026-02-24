@@ -16,7 +16,6 @@
 
 import {
   ApiBlueprint,
-  createApiFactory,
   createFrontendPlugin,
   discoveryApiRef,
   identityApiRef,
@@ -25,8 +24,8 @@ import { signalApiRef } from '@backstage/plugin-signals-react';
 import { SignalClient } from './api/SignalClient';
 
 const api = ApiBlueprint.make({
-  params: {
-    factory: createApiFactory({
+  params: defineParams =>
+    defineParams({
       api: signalApiRef,
       deps: {
         identity: identityApiRef,
@@ -39,7 +38,6 @@ const api = ApiBlueprint.make({
         });
       },
     }),
-  },
 });
 
 /** @alpha */

@@ -26,6 +26,7 @@ import {
   resolveSafeChildPath,
   SchedulerService,
 } from '@backstage/backend-plugin-api';
+import { validate } from 'jsonschema';
 import {
   CompoundEntityRef,
   Entity,
@@ -40,7 +41,9 @@ import { ScmIntegrations } from '@backstage/integration';
 import { EventsService } from '@backstage/plugin-events-node';
 
 import {
+  ConditionTransformer,
   createConditionAuthorizer,
+  createConditionTransformer,
   createPermissionIntegrationRouter,
 } from '@backstage/plugin-permission-node';
 import {
@@ -50,9 +53,11 @@ import {
 } from '@backstage/plugin-scaffolder-common';
 import {
   RESOURCE_TYPE_SCAFFOLDER_ACTION,
+  RESOURCE_TYPE_SCAFFOLDER_TASK,
   RESOURCE_TYPE_SCAFFOLDER_TEMPLATE,
   scaffolderActionPermissions,
   scaffolderPermissions,
+  scaffolderTaskPermissions,
   scaffolderTemplatePermissions,
   taskCancelPermission,
   taskCreatePermission,
@@ -62,6 +67,7 @@ import {
 } from '@backstage/plugin-scaffolder-common/alpha';
 import {
   TaskBroker,
+  TaskFilters,
   TaskStatus,
   TemplateAction,
   TemplateFilter,
@@ -75,29 +81,31 @@ import {
 } from '@backstage/plugin-scaffolder-node/alpha';
 import { HumanDuration, JsonObject } from '@backstage/types';
 import express from 'express';
-import Router from 'express-promise-router';
-import { validate } from 'jsonschema';
 import { Duration } from 'luxon';
-import { pathToFileURL } from 'url';
+import { pathToFileURL } from 'node:url';
 import { v4 as uuid } from 'uuid';
 import { z } from 'zod';
 import {
   DatabaseTaskStore,
+  DefaultTemplateActionRegistry,
   TaskWorker,
-  TemplateActionRegistry,
 } from '../scaffolder';
 import { createDryRunner } from '../scaffolder/dryrun';
 import { StorageTaskBroker } from '../scaffolder/tasks/StorageTaskBroker';
 import { InternalTaskSecrets } from '../scaffolder/tasks/types';
-import { checkPermission } from '../util/checkPermissions';
+import { createOpenApiRouter } from '../schema/openapi';
+import {
+  checkPermission,
+  checkTaskPermission,
+  getAuthorizeConditions,
+} from '../util/checkPermissions';
 import {
   findTemplate,
   getEntityBaseUrl,
   getWorkingDirectory,
-  parseNumberParam,
   parseStringsParam,
 } from './helpers';
-import { scaffolderActionRules, scaffolderTemplateRules } from './rules';
+
 import {
   convertFiltersToRecord,
   convertGlobalsToRecord,
@@ -109,10 +117,20 @@ import { createDefaultFilters } from '../lib/templating/filters/createDefaultFil
 import {
   ActionPermissionRuleInput,
   isActionPermissionRuleInput,
+  isTaskPermissionRuleInput,
   isTemplatePermissionRuleInput,
+  ScaffolderPermissionRuleInput,
+  TaskPermissionRuleInput,
   TemplatePermissionRuleInput,
 } from './permissions';
 import { CatalogService } from '@backstage/plugin-catalog-node';
+
+import {
+  scaffolderActionRules,
+  scaffolderTaskRules,
+  scaffolderTemplateRules,
+} from './rules';
+import { ActionsService } from '@backstage/backend-plugin-api/alpha';
 
 /**
  * RouterOptions
@@ -139,14 +157,13 @@ export interface RouterOptions {
     | CreatedTemplateGlobal[];
   additionalWorkspaceProviders?: Record<string, WorkspaceProvider>;
   permissions?: PermissionsService;
-  permissionRules?: Array<
-    TemplatePermissionRuleInput | ActionPermissionRuleInput
-  >;
+  permissionRules?: Array<ScaffolderPermissionRuleInput>;
   auth: AuthService;
   httpAuth: HttpAuthService;
   events?: EventsService;
   auditor?: AuditorService;
   autocompleteHandlers?: Record<string, AutocompleteHandler>;
+  actionsRegistry: ActionsService;
 }
 
 function isSupportedTemplate(entity: TemplateEntityV1beta3) {
@@ -170,16 +187,19 @@ const readDuration = (
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const router = Router();
-  // Be generous in upload size to support a wide range of templates in dry-run mode.
-  router.use(express.json({ limit: '10MB' }));
+  const router = await createOpenApiRouter({
+    middleware: [
+      // Be generous in upload size to support a wide range of templates in dry-run mode.
+      express.json({ limit: '10MB' }),
+    ],
+  });
 
   const {
     logger: parentLogger,
     config,
     database,
     catalog,
-    actions,
+    actions = [],
     scheduler,
     additionalTemplateFilters,
     additionalTemplateGlobals,
@@ -191,6 +211,7 @@ export async function createRouter(
     auth,
     httpAuth,
     auditor,
+    actionsRegistry,
   } = options;
 
   const concurrentTasksLimit =
@@ -248,7 +269,10 @@ export async function createRouter(
     taskBroker = options.taskBroker;
   }
 
-  const actionRegistry = new TemplateActionRegistry();
+  const actionRegistry = new DefaultTemplateActionRegistry(
+    actionsRegistry,
+    logger,
+  );
 
   const templateExtensions = {
     additionalTemplateFilters: convertFiltersToRecord(
@@ -271,6 +295,7 @@ export async function createRouter(
       integrations,
       logger,
       auditor,
+      config,
       workingDirectory,
       concurrentTasksLimit,
       permissions,
@@ -281,7 +306,9 @@ export async function createRouter(
     workers.push(worker);
   }
 
-  actions?.forEach(action => actionRegistry.register(action));
+  for (const action of actions) {
+    actionRegistry.register(action);
+  }
 
   const launchWorkers = () => workers.forEach(worker => worker.start());
 
@@ -303,6 +330,7 @@ export async function createRouter(
     auditor,
     workingDirectory,
     permissions,
+    config,
     ...templateExtensions,
   });
 
@@ -312,15 +340,24 @@ export async function createRouter(
   const actionRules: ActionPermissionRuleInput[] = Object.values(
     scaffolderActionRules,
   );
+  const taskRules: TaskPermissionRuleInput[] =
+    Object.values(scaffolderTaskRules);
 
   if (permissionRules) {
     templateRules.push(
       ...permissionRules.filter(isTemplatePermissionRuleInput),
     );
     actionRules.push(...permissionRules.filter(isActionPermissionRuleInput));
+    taskRules.push(...permissionRules.filter(isTaskPermissionRuleInput));
   }
 
-  const isAuthorized = createConditionAuthorizer(Object.values(templateRules));
+  const isTemplateAuthorized = createConditionAuthorizer(
+    Object.values(templateRules),
+  );
+  const isTaskAuthorized = createConditionAuthorizer(Object.values(taskRules));
+
+  const taskTransformConditions: ConditionTransformer<TaskFilters> =
+    createConditionTransformer(Object.values(taskRules));
 
   const permissionIntegrationRouter = createPermissionIntegrationRouter({
     resources: [
@@ -333,6 +370,18 @@ export async function createRouter(
         resourceType: RESOURCE_TYPE_SCAFFOLDER_ACTION,
         permissions: scaffolderActionPermissions,
         rules: actionRules,
+      },
+      {
+        resourceType: RESOURCE_TYPE_SCAFFOLDER_TASK,
+        permissions: scaffolderTaskPermissions,
+        rules: taskRules,
+        getResources: async resourceRefs => {
+          return Promise.all(
+            resourceRefs.map(async taskId => {
+              return await taskBroker.get(taskId);
+            }),
+          );
+        },
       },
     ],
     permissions: scaffolderPermissions,
@@ -373,8 +422,10 @@ export async function createRouter(
             description: template.metadata.description,
             'ui:options': template.metadata['ui:options'],
             steps: parameters.map(schema => ({
-              title: schema.title ?? 'Please enter the following information',
-              description: schema.description,
+              title:
+                (schema.title as string) ??
+                'Please enter the following information',
+              description: schema.description as string,
               schema,
             })),
             EXPERIMENTAL_formDecorators:
@@ -391,16 +442,20 @@ export async function createRouter(
         eventId: 'action-fetch',
         request: req,
       });
+      const credentials = await httpAuth.credentials(req);
 
       try {
-        const actionsList = actionRegistry.list().map(action => {
-          return {
-            id: action.id,
-            description: action.description,
-            examples: action.examples,
-            schema: action.schema,
-          };
-        });
+        const list = await actionRegistry.list({ credentials });
+        const actionsList = Array.from(list.values())
+          .map(action => {
+            return {
+              id: action.id,
+              description: action.description,
+              examples: action.examples,
+              schema: action.schema,
+            };
+          })
+          .sort((a, b) => a.id.localeCompare(b.id));
 
         await auditorEvent?.success();
 
@@ -532,11 +587,6 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
-        await checkPermission({
-          credentials,
-          permissions: [taskReadPermission],
-          permissionService: permissions,
-        });
 
         if (!taskBroker.list) {
           throw new Error(
@@ -561,8 +611,14 @@ export async function createRouter(
           };
         });
 
-        const limit = parseNumberParam(req.query.limit, 'limit');
-        const offset = parseNumberParam(req.query.offset, 'offset');
+        const { limit, offset } = req.query;
+
+        const taskPermissionFilters = await getAuthorizeConditions({
+          credentials: credentials,
+          permission: taskReadPermission,
+          permissionService: permissions,
+          transformConditions: taskTransformConditions,
+        });
 
         const tasks = await taskBroker.list({
           filters: {
@@ -571,9 +627,10 @@ export async function createRouter(
           },
           order,
           pagination: {
-            limit: limit ? limit[0] : undefined,
-            offset: offset ? offset[0] : undefined,
+            limit,
+            offset,
           },
+          permissionFilters: taskPermissionFilters,
         });
 
         await auditorEvent?.success();
@@ -598,13 +655,17 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
-        await checkPermission({
+
+        const task = await taskBroker.get(taskId);
+
+        await checkTaskPermission({
           credentials,
           permissions: [taskReadPermission],
           permissionService: permissions,
+          task: task,
+          isTaskAuthorized,
         });
 
-        const task = await taskBroker.get(taskId);
         if (!task) {
           throw new NotFoundError(`Task with id ${taskId} does not exist`);
         }
@@ -634,11 +695,14 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
+        const task = await taskBroker.get(taskId);
         // Requires both read and cancel permissions
-        await checkPermission({
+        await checkTaskPermission({
           credentials,
           permissions: [taskCancelPermission, taskReadPermission],
           permissionService: permissions,
+          task: task,
+          isTaskAuthorized,
         });
 
         await taskBroker.cancel?.(taskId);
@@ -666,11 +730,21 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
-        // Requires both read and cancel permissions
+        const task = await taskBroker.get(taskId);
+
+        // Requires both read and create permissions
         await checkPermission({
           credentials,
-          permissions: [taskCreatePermission, taskReadPermission],
+          permissions: [taskCreatePermission],
           permissionService: permissions,
+        });
+
+        await checkTaskPermission({
+          credentials,
+          permissions: [taskReadPermission],
+          permissionService: permissions,
+          task: task,
+          isTaskAuthorized,
         });
 
         await auditorEvent?.success();
@@ -696,8 +770,10 @@ export async function createRouter(
         await auditorEvent?.fail({ error: err });
         throw err;
       }
-    })
-    .get('/v2/tasks/:taskId/eventstream', async (req, res) => {
+    });
+  (router as express.Router).get(
+    '/v2/tasks/:taskId/eventstream',
+    async (req, res) => {
       const { taskId } = req.params;
 
       const auditorEvent = await auditor?.createEvent({
@@ -711,10 +787,14 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
-        await checkPermission({
+        const task = await taskBroker.get(taskId);
+
+        await checkTaskPermission({
           credentials,
           permissions: [taskReadPermission],
           permissionService: permissions,
+          task: task,
+          isTaskAuthorized,
         });
 
         const after =
@@ -768,7 +848,9 @@ export async function createRouter(
         await auditorEvent?.fail({ error: err });
         throw err;
       }
-    })
+    },
+  );
+  router
     .get('/v2/tasks/:taskId/events', async (req, res) => {
       const { taskId } = req.params;
 
@@ -783,10 +865,14 @@ export async function createRouter(
 
       try {
         const credentials = await httpAuth.credentials(req);
-        await checkPermission({
+        const task = await taskBroker.get(taskId);
+
+        await checkTaskPermission({
           credentials,
           permissions: [taskReadPermission],
           permissionService: permissions,
+          task: task,
+          isTaskAuthorized,
         });
 
         const after = Number(req.query.after) || undefined;
@@ -1023,18 +1109,18 @@ export async function createRouter(
     // Authorize parameters
     if (Array.isArray(template.spec.parameters)) {
       template.spec.parameters = template.spec.parameters.filter(step =>
-        isAuthorized(parameterDecision, step),
+        isTemplateAuthorized(parameterDecision, step),
       );
     } else if (
       template.spec.parameters &&
-      !isAuthorized(parameterDecision, template.spec.parameters)
+      !isTemplateAuthorized(parameterDecision, template.spec.parameters)
     ) {
       template.spec.parameters = undefined;
     }
 
     // Authorize steps
     template.spec.steps = template.spec.steps.filter(step =>
-      isAuthorized(stepDecision, step),
+      isTemplateAuthorized(stepDecision, step),
     );
 
     return template;

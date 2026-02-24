@@ -13,17 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-const crypto = require('crypto');
 
+// @ts-check
+
+const crypto = require('node:crypto');
+
+/**
+ * @param {import('knex').Knex} knex
+ */
 exports.up = async function up(knex) {
   await knex.schema.alterTable('user_settings', table => {
     table.string('topic').nullable().after('origin');
-    table.string('settings_key_hash', 64).notNullable();
+    table.string('settings_key_hash', 64).nullable();
     table.dropUnique([], 'user_settings_unique_idx');
-  });
-
-  await knex.schema.alterTable('user_settings', table => {
-    table.unique(['settings_key_hash'], 'user_settings_unique_idx');
   });
 
   const rows = await knex('user_settings').select('user', 'channel', 'origin');
@@ -35,12 +37,19 @@ exports.up = async function up(knex) {
         user: row.user,
         channel: row.channel,
         origin: row.origin,
-        topic: row.topic,
       })
       .update({ settings_key_hash: hash });
   }
+
+  await knex.schema.alterTable('user_settings', table => {
+    table.string('settings_key_hash', 64).notNullable().alter();
+    table.unique(['settings_key_hash'], 'user_settings_unique_idx');
+  });
 };
 
+/**
+ * @param {import('knex').Knex} knex
+ */
 exports.down = async function down(knex) {
   await knex.schema.table('user_settings', table => {
     table.dropUnique([], 'user_settings_unique_idx');

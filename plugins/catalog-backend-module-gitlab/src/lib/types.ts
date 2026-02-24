@@ -45,6 +45,21 @@ export type GitLabProject = {
   forked_from_project?: GitlabProjectForkedFrom;
 };
 
+export type GitLabCommit = {
+  id: string;
+  short_id: string;
+  title: string;
+  message: string;
+  created_at: string;
+  author_name: string;
+  author_email: string;
+  authored_date: string;
+  committed_date: string;
+  committer_name: string;
+  committer_email: string;
+  web_url: string;
+};
+
 /**
  * Representation of a GitLab user in the GitLab API
  *
@@ -82,6 +97,17 @@ export type GitLabGroup = {
   description?: string;
   visibility?: string;
   parent_id?: number;
+};
+
+/**
+ * Representation of a GitLab file inside a project
+ *
+ * @public
+ */
+export type GitLabFile = {
+  path: string;
+  ref: string;
+  project_id: number;
 };
 
 export type GitLabGroupMembersResponse = {
@@ -184,11 +210,13 @@ export type GitlabProviderConfig = {
    * Defaults to `[\s\S]*`, which means to not filter anything
    */
   userPattern: RegExp;
+
   /**
-   * Filters found groups based on provided patter.
+   * Filters found groups based on provided patterns.
    * Defaults to `[\s\S]*`, which means to not filter anything
+   *
    */
-  groupPattern: RegExp;
+  groupPattern: RegExp | RegExp[];
 
   /**
    * If true, the provider will also add inherited (ascendant) users to the ingested groups.
@@ -197,6 +225,11 @@ export type GitlabProviderConfig = {
    * @deprecated Use the `relations` array to configure group membership relations instead.
    **/
   allowInherited?: boolean;
+
+  /**
+   * If true, use the GitLab search API to find projects locations.
+   */
+  useSearch?: boolean;
 
   /**
    * Specifies the types of group membership relations that should be included when ingesting data.

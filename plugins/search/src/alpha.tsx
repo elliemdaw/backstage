@@ -31,7 +31,6 @@ import {
   useApi,
   discoveryApiRef,
   fetchApiRef,
-  createApiFactory,
 } from '@backstage/core-plugin-api';
 
 import {
@@ -40,6 +39,7 @@ import {
   createExtensionInput,
   PageBlueprint,
   NavItemBlueprint,
+  configApiRef,
 } from '@backstage/frontend-plugin-api';
 
 import {
@@ -69,22 +69,16 @@ import { rootRouteRef } from './plugin';
 import { SearchClient } from './apis';
 import { SearchType } from './components/SearchType';
 import { UrlUpdater } from './components/SearchPage/SearchPage';
-import {
-  compatWrapper,
-  convertLegacyRouteRef,
-  convertLegacyRouteRefs,
-} from '@backstage/core-compat-api';
 
 /** @alpha */
 export const searchApi = ApiBlueprint.make({
-  params: {
-    factory: createApiFactory({
+  params: defineParams =>
+    defineParams({
       api: searchApiRef,
       deps: { discoveryApi: discoveryApiRef, fetchApi: fetchApiRef },
       factory: ({ discoveryApi, fetchApi }) =>
         new SearchClient({ discoveryApi, fetchApi }),
     }),
-  },
 });
 
 const useSearchPageStyles = makeStyles((theme: Theme) => ({
@@ -117,8 +111,8 @@ export const searchPage = PageBlueprint.makeWithOverrides({
   },
   factory(originalFactory, { config, inputs }) {
     return originalFactory({
-      defaultPath: '/search',
-      routeRef: convertLegacyRouteRef(rootRouteRef),
+      path: '/search',
+      routeRef: rootRouteRef,
       loader: async () => {
         const getResultItemComponent = (result: SearchResult) => {
           const value = inputs.items.find(item =>
@@ -146,6 +140,7 @@ export const searchPage = PageBlueprint.makeWithOverrides({
           const { isMobile } = useSidebarPinState();
           const { types } = useSearch();
           const catalogApi = useApi(catalogApiRef);
+          const configApi = useApi(configApiRef);
 
           return (
             <Page themeId="home">
@@ -159,7 +154,9 @@ export const searchPage = PageBlueprint.makeWithOverrides({
                     <Grid item xs={3}>
                       <SearchType.Accordion
                         name="Result Type"
-                        defaultValue="software-catalog"
+                        defaultValue={configApi.getOptionalString(
+                          'search.defaultType',
+                        )}
                         showCounts
                         types={[
                           {
@@ -256,11 +253,11 @@ export const searchPage = PageBlueprint.makeWithOverrides({
           );
         };
 
-        return compatWrapper(
+        return (
           <SearchContextProvider>
             <UrlUpdater />
             <Component />
-          </SearchContextProvider>,
+          </SearchContextProvider>
         );
       },
     });
@@ -270,7 +267,7 @@ export const searchPage = PageBlueprint.makeWithOverrides({
 /** @alpha */
 export const searchNavItem = NavItemBlueprint.make({
   params: {
-    routeRef: convertLegacyRouteRef(rootRouteRef),
+    routeRef: rootRouteRef,
     title: 'Search',
     icon: SearchIcon,
   },
@@ -279,11 +276,13 @@ export const searchNavItem = NavItemBlueprint.make({
 /** @alpha */
 export default createFrontendPlugin({
   pluginId: 'search',
+  title: 'Search',
+  icon: <SearchIcon />,
   info: { packageJson: () => import('../package.json') },
   extensions: [searchApi, searchPage, searchNavItem],
-  routes: convertLegacyRouteRefs({
+  routes: {
     root: rootRouteRef,
-  }),
+  },
 });
 
 /** @alpha */

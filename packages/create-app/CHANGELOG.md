@@ -1,5 +1,348 @@
 # @backstage/create-app
 
+## 0.7.9
+
+### Patch Changes
+
+- 40f2720: Updated to include the missing core plugins in the template used with the `--next` flag. Also updated `react-router*` versions and added Jest 30-related dependencies. Finally, moved the order of `@playwright/test` so it won't trigger a file change during the creation process.
+- 1ea737c: Bumped create-app version.
+- 7c41134: Bumped create-app version.
+- 65ba820: Updated the app template sidebar to use the new `NavContentBlueprint` API for page-based navigation.
+- 7455dae: Use node prefix on native imports
+- c38b74d: Switched `next-app` template to use blueprint from `@backstage/plugin-app-react`.
+- Updated dependencies
+  - @backstage/cli-common@0.1.18
+
+## 0.7.9-next.2
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.9-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.9-next.0
+
+### Patch Changes
+
+- 7455dae: Use node prefix on native imports
+- c38b74d: Switched `next-app` template to use blueprint from `@backstage/plugin-app-react`.
+- Updated dependencies
+  - @backstage/cli-common@0.1.18-next.0
+
+## 0.7.8
+
+### Patch Changes
+
+- fea3e39: Bumped create-app version.
+- 9f1ee3e: Bumped create-app version.
+- 880310b: Bumped create-app version.
+- f1fe6fe: Updated Dockerfile to use Node 24 and Debian Trixie
+- Updated dependencies
+  - @backstage/cli-common@0.1.17
+
+## 0.7.8-next.3
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.8-next.2
+
+### Patch Changes
+
+- f1fe6fe: Updated Dockerfile to use Node 24 and Debian Trixie
+
+## 0.7.8-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.8-next.0
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.16
+
+## 0.7.7
+
+### Patch Changes
+
+- 336db00: Bumped create-app version.
+- 2bae83a: Updated engines to support Node 22 or 24
+- c8c2329: Add proxy configuration from env-vars to create-app tasks
+- 2bae83a: Bumped dev dependencies `@types/node`
+- Updated dependencies
+  - @backstage/cli-common@0.1.16
+
+## 0.7.7-next.2
+
+### Patch Changes
+
+- 2bae83a: Updated engines to support Node 22 or 24
+- 2bae83a: Bumped dev dependencies `@types/node`
+- Updated dependencies
+  - @backstage/cli-common@0.1.16-next.2
+
+## 0.7.7-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.16-next.1
+
+## 0.7.7-next.0
+
+### Patch Changes
+
+- c8c2329: Add proxy configuration from env-vars to create-app tasks
+- Updated dependencies
+  - @backstage/cli-common@0.1.16-next.0
+
+## 0.7.6
+
+### Patch Changes
+
+- 2c1fe37: Bumped create-app version.
+- 20fae88: Bumped create-app version.
+- 9f939a6: Added `@backstage/plugin-app-visualizer` to the app in the `--next` template.
+- fc7cbfc: Added the new `@backstage/cli/templates/catalog-provider-module` template to the explicit template configuration for the `next-app` template.
+
+## 0.7.6-next.3
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.6-next.2
+
+### Patch Changes
+
+- 9f939a6: Added `@backstage/plugin-app-visualizer` to the app in the `--next` template.
+
+## 0.7.6-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.6-next.0
+
+### Patch Changes
+
+- fc7cbfc: Added the new `@backstage/cli/templates/catalog-provider-module` template to the explicit template configuration for the `next-app` template.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.5
+
+### Patch Changes
+
+- c73bfa4: Bumped create-app version.
+- c2c6054: Bumped create-app version.
+- ffb5b44: Bumped create-app version.
+- 316d077: Bumped create-app version.
+- 7dcedff: Bump `better-sqlite3` to the latest version
+
+## 0.7.5-next.3
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.5-next.2
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.5-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.5-next.0
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.4
+
+### Patch Changes
+
+- b2d9fc1: Creates a plugin that redirects from the Home page to the Catalog index page to avoid seeing a not found page error when starting the app.
+- 020d484: Bumped create-app version.
+- 02dbe8e: Add missing dependency to `@backstage/cli`, `@backstage/core-plugin-api` and `@backstage/integration-react`
+
+## 0.7.4-next.2
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.4-next.1
+
+### Patch Changes
+
+- 02dbe8e: Add missing dependency to `@backstage/cli`, `@backstage/core-plugin-api` and `@backstage/integration-react`
+
+## 0.7.4-next.0
+
+### Patch Changes
+
+- b2d9fc1: Creates a plugin that redirects from the Home page to the Catalog index page to avoid seeing a not found page error when starting the app.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.2
+
+### Patch Changes
+
+- d7a3d04: Created a flag for scaffolding apps using the new frontend system.
+- 4704160: Bumped create-app version.
+- 1e8a013: Bumped create-app version.
+- e33fce1: Added Notifications and Signals to be installed by default
+- 8b1bf6e: Updated the `app.packages` config setting now that it no longer is experimental
+- 2a156e0: Updated the `better-sqlite` dependency from `v9.0.0` to `v13.0.0`. You can apply this change to your instance by applying the following change to your `packages/backend/package.json` and running `yarn install`.
+
+  ```diff
+    "dependencies": {
+      "app": "link:../app",
+  -    "better-sqlite3": "^9.0.0",
+  +    "better-sqlite3": "^12.0.0",
+      "node-gyp": "^10.0.0",
+      "pg": "^8.11.3"
+    }
+  ```
+
+## 0.7.2-next.3
+
+### Patch Changes
+
+- 8b1bf6e: Updated the `app.packages` config setting now that it no longer is experimental
+
+## 0.7.2-next.2
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.2-next.1
+
+### Patch Changes
+
+- d7a3d04: Created a flag for scaffolding apps using the new frontend system.
+- 2a156e0: Updated the `better-sqlite` dependency from `v9.0.0` to `v13.0.0`. You can apply this change to your instance by applying the following change to your `packages/backend/package.json` and running `yarn install`.
+
+  ```diff
+    "dependencies": {
+      "app": "link:../app",
+  -    "better-sqlite3": "^9.0.0",
+  +    "better-sqlite3": "^12.0.0",
+      "node-gyp": "^10.0.0",
+      "pg": "^8.11.3"
+    }
+  ```
+
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.2-next.0
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.1
+
+### Patch Changes
+
+- 952cefe: Bumped create-app version.
+- 2339363: **BREAKING:** The experimental `catalog.useUrlReadersSearch` configuration flag (introduced in v1.36) has been removed.
+
+  The `UrlReaderProcessor` now always uses the `search` method of `UrlReaders`. Built-in `UrlReaderService` implementations have been updated accordingly.
+  If you use custom `UrlReaderService` implementations, you need to adapt their `search` method to correctly handle both specific URLs and potential
+  search patterns (see changes on built-in readers [in the original PR](https://github.com/backstage/backstage/pull/28379/files#diff-68b0452f173ee54bdd40f7b5e047a9cb8bb59200425622c212c217b76dac1d1b)).
+
+  Previous behavior was to call the `search` method only if the parsed Git URL's filename contained a wildcard and use `readUrl` otherwise. Each `UrlReaderService` must implement this logic in the `search` method instead.
+
+  This allows each `UrlReaderService` implementation to check whether it's a search URL (that contains a wildcard pattern) or not using logic that is specific to each provider.
+
+- c4a0830: Removed deprecated 'allowedHosts' field from GitHub Publish action input in default template files to fix validation errors with strict Zod validation.
+
+## 0.7.1-next.2
+
+### Patch Changes
+
+- c4a0830: Removed deprecated 'allowedHosts' field from GitHub Publish action input in default template files to fix validation errors with strict Zod validation.
+
+## 0.7.1-next.1
+
+### Patch Changes
+
+- Bumped create-app version.
+
+## 0.7.1-next.0
+
+### Patch Changes
+
+- 2339363: **BREAKING:** The experimental `catalog.useUrlReadersSearch` configuration flag (introduced in v1.36) has been removed.
+
+  The `UrlReaderProcessor` now always uses the `search` method of `UrlReaders`. Built-in `UrlReaderService` implementations have been updated accordingly.
+  If you use custom `UrlReaderService` implementations, you need to adapt their `search` method to correctly handle both specific URLs and potential
+  search patterns (see changes on built-in readers [in the original PR](https://github.com/backstage/backstage/pull/28379/files#diff-68b0452f173ee54bdd40f7b5e047a9cb8bb59200425622c212c217b76dac1d1b)).
+
+  Previous behavior was to call the `search` method only if the parsed Git URL's filename contained a wildcard and use `readUrl` otherwise. Each `UrlReaderService` must implement this logic in the `search` method instead.
+
+  This allows each `UrlReaderService` implementation to check whether it's a search URL (that contains a wildcard pattern) or not using logic that is specific to each provider.
+
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.0
+
+### Minor Changes
+
+- 30474c4: Add .cache directory to shipped gitignore.
+
+### Patch Changes
+
+- d57a6f7: Bumped create-app version.
+- f628f44: Bumped create-app version.
+- 9c9faf2: Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.0-next.3
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
+## 0.7.0-next.2
+
+### Patch Changes
+
+- Bumped create-app version.
+- Updated dependencies
+  - @backstage/cli-common@0.1.15
+
 ## 0.7.0-next.1
 
 ### Patch Changes

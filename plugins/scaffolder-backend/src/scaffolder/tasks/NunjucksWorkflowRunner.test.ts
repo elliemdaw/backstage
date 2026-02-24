@@ -15,15 +15,18 @@
  */
 
 import { NunjucksWorkflowRunner } from './NunjucksWorkflowRunner';
-import { TemplateActionRegistry } from '../actions';
+import {
+  DefaultTemplateActionRegistry,
+  TemplateActionRegistry,
+} from '../actions';
 import { ScmIntegrations } from '@backstage/integration';
 import { JsonObject } from '@backstage/types';
 import { ConfigReader } from '@backstage/config';
 import { TaskSpec } from '@backstage/plugin-scaffolder-common';
 import {
   createTemplateAction,
-  TaskSecrets,
   TaskContext,
+  TaskSecrets,
 } from '@backstage/plugin-scaffolder-node';
 import { UserEntity } from '@backstage/catalog-model';
 import {
@@ -36,6 +39,7 @@ import {
   mockCredentials,
   mockServices,
 } from '@backstage/backend-test-utils';
+import { actionsRegistryServiceMock } from '@backstage/backend-test-utils/alpha';
 
 describe('NunjucksWorkflowRunner', () => {
   let actionRegistry: TemplateActionRegistry;
@@ -53,6 +57,16 @@ describe('NunjucksWorkflowRunner', () => {
 
   const integrations = ScmIntegrations.fromConfig(
     new ConfigReader({
+      scaffolder: {
+        defaultEnvironment: {
+          parameters: {
+            region: 'us-east-1',
+          },
+          secrets: {
+            AWS_ACCESS_KEY: 'test-secret-value',
+          },
+        },
+      },
       integrations: {
         github: [{ host: 'github.com', token: 'token' }],
       },
@@ -104,7 +118,10 @@ describe('NunjucksWorkflowRunner', () => {
     // This one is ESM-only
     stripAnsi = await import('strip-ansi').then(m => m.default);
 
-    actionRegistry = new TemplateActionRegistry();
+    actionRegistry = new DefaultTemplateActionRegistry(
+      actionsRegistryServiceMock(),
+      mockServices.logger.mock(),
+    );
     fakeActionHandler = jest.fn();
     fakeTaskLog = jest.fn();
 
@@ -212,12 +229,26 @@ describe('NunjucksWorkflowRunner', () => {
       { result: AuthorizeResult.ALLOW },
     ]);
 
+    const config = new ConfigReader({
+      scaffolder: {
+        defaultEnvironment: {
+          parameters: {
+            region: 'us-east-1',
+          },
+          secrets: {
+            AWS_ACCESS_KEY: 'test-secret-value',
+          },
+        },
+      },
+    });
+
     runner = new NunjucksWorkflowRunner({
       actionRegistry,
       integrations,
       workingDirectory: mockDir.path,
       logger,
       permissions: mockedPermissionApi,
+      config,
     });
   });
 
@@ -361,6 +392,24 @@ describe('NunjucksWorkflowRunner', () => {
         expect.objectContaining({ backstageToken: token }),
       );
     });
+
+    it('should pass step info through', async () => {
+      const task = createMockTaskWithSpec({
+        steps: [
+          {
+            id: 'test',
+            name: 'name',
+            action: 'jest-validated-action',
+            input: { foo: 1 },
+          },
+        ],
+      });
+
+      await runner.execute(task);
+
+      expect(fakeActionHandler.mock.calls[0][0].step.id).toEqual('test');
+      expect(fakeActionHandler.mock.calls[0][0].step.name).toEqual('name');
+    });
   });
 
   describe('conditionals', () => {
@@ -476,6 +525,7 @@ describe('NunjucksWorkflowRunner', () => {
             action: 'jest-mock-action',
             input: {
               foo: '${{parameters.input | lower }}',
+              region: '${{environment.parameters.region}}',
             },
           },
         ],
@@ -487,7 +537,9 @@ describe('NunjucksWorkflowRunner', () => {
       await runner.execute(task);
 
       expect(fakeActionHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ input: { foo: 'backstage' } }),
+        expect.objectContaining({
+          input: { foo: 'backstage', region: 'us-east-1' },
+        }),
       );
     });
 
@@ -760,6 +812,49 @@ describe('NunjucksWorkflowRunner', () => {
     });
 
     // eslint-disable-next-line jest/expect-expect
+    it('should redact secrets that are passed in the environment', async () => {
+      actionRegistry.register({
+        id: 'log-secret',
+        description: 'Mock action for testing',
+        supportsDryRun: true,
+        handler: async ctx => {
+          ctx.logger.info(ctx.input.secret);
+        },
+        schema: {
+          input: {
+            type: 'object',
+            required: ['secret'],
+            properties: {
+              secret: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      });
+
+      const task = createMockTaskWithSpec(
+        {
+          steps: [
+            {
+              id: 'test',
+              name: 'name',
+              action: 'log-secret',
+              input: {
+                secret: '${{ environment.secrets.AWS_ACCESS_KEY }}',
+              },
+            },
+          ],
+        },
+        { secret: 'my-secret-value' },
+      );
+
+      await runner.execute(task);
+
+      expectTaskLog('info: ***');
+    });
+
+    // eslint-disable-next-line jest/expect-expect
     it('should redact meta fields properly', async () => {
       actionRegistry.register({
         id: 'log-secret',
@@ -832,6 +927,42 @@ describe('NunjucksWorkflowRunner', () => {
       });
     });
 
+    it('should run a step repeatedly - flat values with secrets', async () => {
+      const secrets = {
+        s1: 'secret-value1',
+        s2: 'secret-value2',
+        s3: 'secret-value3',
+      };
+      const task = createMockTaskWithSpec(
+        {
+          steps: [
+            {
+              id: 'test',
+              name: 'name',
+              each: [
+                '${{ secrets.s1 }}',
+                '${{ secrets.s2 }}',
+                '${{ secrets.s3 }}',
+              ],
+              action: 'jest-mock-action',
+              input: { secret: '${{each.value}}' },
+            },
+          ],
+        },
+        secrets,
+      );
+      await runner.execute(task);
+
+      Object.values(secrets).forEach((secret, idx) => {
+        expectTaskLog(
+          `info: Running step each: {"key":"${idx}","value":"***"}`,
+        );
+        expect(fakeActionHandler).toHaveBeenCalledWith(
+          expect.objectContaining({ input: { secret } }),
+        );
+      });
+    });
+
     it('should run a step repeatedly - object list', async () => {
       const task = createMockTaskWithSpec({
         steps: [
@@ -860,6 +991,46 @@ describe('NunjucksWorkflowRunner', () => {
           input: { key: '0', value: { color: 'blue' } },
         }),
       );
+    });
+
+    it('should run a step repeatedly - object list with secrets', async () => {
+      const secrets = {
+        s1: 'secret-value1',
+        s2: 'secret-value2',
+      };
+      const names = ['Service1', 'Service2'];
+      const task = createMockTaskWithSpec(
+        {
+          steps: [
+            {
+              id: 'test',
+              name: 'name',
+              each: [
+                { name: names[0], token: '${{ secrets.s1 }}' },
+                { name: names[1], token: '${{ secrets.s2 }}' },
+              ],
+              action: 'jest-mock-action',
+              input: {
+                name: '${{each.value.name}}',
+                token: '${{each.value.token}}',
+              },
+            },
+          ],
+        },
+        secrets,
+      );
+      await runner.execute(task);
+
+      Object.values(secrets).forEach((secret, idx) => {
+        expectTaskLog(
+          `info: Running step each: {"key":"${idx}","value":"[object Object]"}`,
+        );
+        expect(fakeActionHandler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            input: { name: names[idx], token: secret },
+          }),
+        );
+      });
     });
 
     it('should run a step repeatedly - object', async () => {
@@ -893,6 +1064,50 @@ describe('NunjucksWorkflowRunner', () => {
           }),
         );
       }
+    });
+
+    it('should run a step repeatedly - only iterations where the "if" condition is truthy', async () => {
+      const truthyConditions = [true, 1, 'a', {}];
+      const falsyConditions = [false, 0, null, ''];
+      const conditions = [...truthyConditions, ...falsyConditions];
+      const task = createMockTaskWithSpec({
+        steps: [
+          {
+            id: 'test',
+            name: 'name',
+            each: '${{parameters.conditions}}',
+            action: 'jest-mock-action',
+            input: { condition: '${{each.value}}' },
+            if: '${{each.value}}',
+          },
+        ],
+        parameters: {
+          conditions,
+        },
+      });
+      await runner.execute(task);
+
+      truthyConditions.forEach((condition, idx) => {
+        expectTaskLog(
+          `info: Running step each: {"key":"${idx}","value":"${condition}"}`,
+        );
+        expect(fakeActionHandler).toHaveBeenCalledWith(
+          expect.objectContaining({ input: { condition } }),
+        );
+      });
+
+      falsyConditions.forEach((condition, idx) => {
+        expectTaskLog(
+          `info: Skipping step each: {"key":"${
+            idx + truthyConditions.length
+          }","value":"${condition}"}`,
+        );
+        expect(fakeActionHandler).not.toHaveBeenCalledWith(
+          expect.objectContaining({ input: { condition } }),
+        );
+      });
+
+      expect(fakeActionHandler).toHaveBeenCalledTimes(truthyConditions.length);
     });
 
     it('should run a step repeatedly with validation of single-expression value', async () => {
@@ -989,7 +1204,9 @@ describe('NunjucksWorkflowRunner', () => {
       await runner.execute(task);
 
       expect(fakeActionHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ secrets: { foo: 'bar' } }),
+        expect.objectContaining({
+          secrets: { foo: 'bar' },
+        }),
       );
     });
 
@@ -1003,6 +1220,7 @@ describe('NunjucksWorkflowRunner', () => {
               action: 'jest-mock-action',
               input: {
                 b: '${{ secrets.foo }}',
+                aws_key: '${{ environment.secrets.AWS_ACCESS_KEY }}',
               },
             },
           ],
@@ -1013,7 +1231,41 @@ describe('NunjucksWorkflowRunner', () => {
       await runner.execute(task);
 
       expect(fakeActionHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ input: { b: 'bar' } }),
+        expect.objectContaining({
+          input: { b: 'bar', aws_key: 'test-secret-value' },
+        }),
+      );
+    });
+
+    it('should separate task secrets from environment secrets', async () => {
+      const task = createMockTaskWithSpec(
+        {
+          steps: [
+            {
+              id: 'test',
+              name: 'name',
+              action: 'jest-mock-action',
+              input: {
+                b: '${{ secrets.foo }}',
+                aws_key: '${{ secrets.AWS_ACCESS_KEY }}',
+                env_aws_key: '${{ environment.secrets.AWS_ACCESS_KEY }}',
+              },
+            },
+          ],
+        },
+        { foo: 'bar', AWS_ACCESS_KEY: 'another-value-from-task' },
+      );
+
+      await runner.execute(task);
+
+      expect(fakeActionHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: {
+            b: 'bar',
+            aws_key: 'another-value-from-task',
+            env_aws_key: 'test-secret-value',
+          },
+        }),
       );
     });
 
@@ -1032,6 +1284,7 @@ describe('NunjucksWorkflowRunner', () => {
           ],
           output: {
             b: '${{ secrets.foo }}',
+            c: '${{ environment.secrets.AWS_ACCESS_KEY }}',
           },
         },
         { foo: 'bar' },
@@ -1040,6 +1293,7 @@ describe('NunjucksWorkflowRunner', () => {
       const executedTask = await runner.execute(task);
 
       expect(executedTask.output.b).toBeUndefined();
+      expect(executedTask.output.c).toBeUndefined();
     });
   });
 
@@ -1370,6 +1624,35 @@ describe('NunjucksWorkflowRunner', () => {
       expect(
         fakeActionHandler.mock.calls[0][0].templateInfo.entity.metadata.name,
       ).toEqual('test-template');
+    });
+
+    it('should have step info in action context during dry run', async () => {
+      const task = createMockTaskWithSpec(
+        {
+          templateInfo: {
+            entityRef: 'dryRun-Entity',
+            entity: { metadata: { name: 'test-template' } },
+          },
+          steps: [
+            {
+              id: 'test',
+              name: 'name',
+              action: 'jest-validated-action',
+              input: { foo: 1 },
+            },
+          ],
+        },
+        {
+          backstageToken: token,
+        },
+        true,
+      );
+
+      await runner.execute(task);
+
+      expect(fakeActionHandler.mock.calls[0][0].isDryRun).toEqual(true);
+      expect(fakeActionHandler.mock.calls[0][0].step.id).toEqual('test');
+      expect(fakeActionHandler.mock.calls[0][0].step.name).toEqual('name');
     });
   });
 

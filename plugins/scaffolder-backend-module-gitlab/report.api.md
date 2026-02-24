@@ -22,6 +22,7 @@ export const createGitlabGroupEnsureExistsAction: (options: {
         }
     )[];
     token?: string | undefined;
+    description?: string | undefined;
   },
   {
     groupId?: number | undefined;
@@ -46,7 +47,7 @@ export const createGitlabIssueAction: (options: {
     discussionToResolve?: string | undefined;
     epicId?: number | undefined;
     labels?: string | undefined;
-    issueType?: IssueType | undefined;
+    issueType?: 'issue' | 'task' | 'incident' | 'test_case' | undefined;
     mergeRequestToResolveDiscussionsOf?: number | undefined;
     milestoneId?: number | undefined;
     weight?: number | undefined;
@@ -110,6 +111,7 @@ export const createGitlabProjectVariableAction: (options: {
     token?: string | undefined;
     variableProtected?: boolean | undefined;
     masked?: boolean | undefined;
+    maskedAndHidden?: boolean | undefined;
     raw?: boolean | undefined;
     environmentScope?: string | undefined;
   },
@@ -130,12 +132,34 @@ export const createGitlabRepoPushAction: (options: {
     sourcePath?: string | undefined;
     targetPath?: string | undefined;
     token?: string | undefined;
-    commitAction?: 'update' | 'delete' | 'create' | undefined;
+    commitAction?: 'auto' | 'update' | 'delete' | 'create' | undefined;
   },
   {
     projectid: string;
     projectPath: string;
     commitHash: string;
+  },
+  'v2'
+>;
+
+// @public
+export const createGitlabUserInfoAction: (options: {
+  integrations: ScmIntegrationRegistry;
+}) => TemplateAction<
+  {
+    repoUrl: string;
+    token?: string | undefined;
+    userId?: number | undefined;
+  },
+  {
+    id: number;
+    username: string;
+    name: string;
+    state: string;
+    webUrl: string;
+    email?: string | undefined;
+    createdAt?: string | undefined;
+    publicEmail?: string | undefined;
   },
   'v2'
 >;
@@ -198,6 +222,7 @@ export function createPublishGitlabAction(options: {
           variable_type?: 'file' | 'env_var' | undefined;
           masked?: boolean | undefined;
           environment_scope?: string | undefined;
+          masked_and_hidden?: boolean | undefined;
         }[]
       | undefined;
   },
@@ -218,8 +243,8 @@ export const createPublishGitlabMergeRequestAction: (options: {
   {
     repoUrl: string;
     title: string;
-    description: string;
     branchName: string;
+    description?: string | undefined;
     targetBranchName?: string | undefined;
     sourcePath?: string | undefined;
     targetPath?: string | undefined;
@@ -275,11 +300,11 @@ export const editGitlabIssueAction: (options: {
     discussionLocked?: boolean | undefined;
     dueDate?: string | undefined;
     epicId?: number | undefined;
-    issueType?: IssueType | undefined;
+    issueType?: 'issue' | 'task' | 'incident' | 'test_case' | undefined;
     labels?: string | undefined;
     milestoneId?: number | undefined;
     removeLabels?: string | undefined;
-    stateEvent?: IssueStateEvent | undefined;
+    stateEvent?: 'close' | 'reopen' | undefined;
     title?: string | undefined;
     updatedAt?: string | undefined;
     weight?: number | undefined;
@@ -301,22 +326,43 @@ const gitlabModule: BackendFeature;
 export default gitlabModule;
 
 // @public
-export enum IssueStateEvent {
+export const IssueStateEvent: {
+  readonly CLOSE: 'close';
+  readonly REOPEN: 'reopen';
+};
+
+// @public (undocumented)
+export type IssueStateEvent =
+  (typeof IssueStateEvent)[keyof typeof IssueStateEvent];
+
+// @public (undocumented)
+export namespace IssueStateEvent {
   // (undocumented)
-  CLOSE = 'close',
+  export type CLOSE = typeof IssueStateEvent.CLOSE;
   // (undocumented)
-  REOPEN = 'reopen',
+  export type REOPEN = typeof IssueStateEvent.REOPEN;
 }
 
 // @public
-export enum IssueType {
+export const IssueType: {
+  readonly ISSUE: 'issue';
+  readonly INCIDENT: 'incident';
+  readonly TEST: 'test_case';
+  readonly TASK: 'task';
+};
+
+// @public (undocumented)
+export type IssueType = (typeof IssueType)[keyof typeof IssueType];
+
+// @public (undocumented)
+export namespace IssueType {
   // (undocumented)
-  INCIDENT = 'incident',
+  export type INCIDENT = typeof IssueType.INCIDENT;
   // (undocumented)
-  ISSUE = 'issue',
+  export type ISSUE = typeof IssueType.ISSUE;
   // (undocumented)
-  TASK = 'task',
+  export type TASK = typeof IssueType.TASK;
   // (undocumented)
-  TEST = 'test_case',
+  export type TEST = typeof IssueType.TEST;
 }
 ```

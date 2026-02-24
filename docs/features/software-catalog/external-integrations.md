@@ -1,7 +1,6 @@
 ---
 id: external-integrations
 title: External integrations
-# prettier-ignore
 description: Documentation on External integrations to integrate systems with Backstage
 ---
 
@@ -295,7 +294,7 @@ import {
   coreServices,
   createBackendModule,
 } from '@backstage/backend-plugin-api';
-import { catalogProcessingExtensionPoint } from '@backstage/plugin-catalog-node/alpha';
+import { catalogProcessingExtensionPoint } from '@backstage/plugin-catalog-node';
 import { FrobsProvider } from './path/to/class';
 
 export const catalogModuleFrobsProvider = createBackendModule({
@@ -738,7 +737,7 @@ import {
   coreServices,
   createBackendModule,
 } from '@backstage/backend-plugin-api';
-import { catalogProcessingExtensionPoint } from '@backstage/plugin-catalog-node/alpha';
+import { catalogProcessingExtensionPoint } from '@backstage/plugin-catalog-node';
 import { SystemXReaderProcessor } from '../path/to/class';
 
 export const catalogModuleSystemXReaderProcessor = createBackendModule({
@@ -776,7 +775,7 @@ sent. Luckily many external systems provide ETag support to check for changes
 which usually doesn't count towards the quota and saves resources both
 internally and externally.
 
-The catalog has built in support for leveraging ETags when refreshing external
+The catalog has built in support for leveraging `ETag`s when refreshing external
 locations in GitHub. This example aims to demonstrate how to add the same
 behavior for `system-x` that we implemented earlier.
 

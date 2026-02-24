@@ -4,54 +4,50 @@
 
 ```ts
 import { ApiHolder } from '@backstage/core-plugin-api';
-import { ApiRef } from '@backstage/core-plugin-api';
+import { ApiRef } from '@backstage/frontend-plugin-api';
 import { BackstagePlugin } from '@backstage/core-plugin-api';
 import { ComponentType } from 'react';
 import { createScaffolderFieldExtension as createScaffolderFieldExtension_2 } from '@backstage/plugin-scaffolder-react';
 import { createScaffolderLayout as createScaffolderLayout_2 } from '@backstage/plugin-scaffolder-react';
 import { CustomFieldExtensionSchema as CustomFieldExtensionSchema_2 } from '@backstage/plugin-scaffolder-react';
 import { CustomFieldValidator as CustomFieldValidator_2 } from '@backstage/plugin-scaffolder-react';
-import { DiscoveryApi } from '@backstage/core-plugin-api';
 import { ExternalRouteRef } from '@backstage/core-plugin-api';
-import { FetchApi } from '@backstage/core-plugin-api';
 import { FieldExtensionComponent as FieldExtensionComponent_2 } from '@backstage/plugin-scaffolder-react';
 import { FieldExtensionComponentProps as FieldExtensionComponentProps_2 } from '@backstage/plugin-scaffolder-react';
 import { FieldExtensionOptions as FieldExtensionOptions_2 } from '@backstage/plugin-scaffolder-react';
 import { FieldSchema as FieldSchema_2 } from '@backstage/plugin-scaffolder-react';
 import { FieldValidation } from '@rjsf/utils';
 import { FormProps } from '@backstage/plugin-scaffolder-react';
-import { IdentityApi } from '@backstage/core-plugin-api';
 import { JSX as JSX_2 } from 'react/jsx-runtime';
 import { LayoutOptions as LayoutOptions_2 } from '@backstage/plugin-scaffolder-react';
 import { LayoutTemplate as LayoutTemplate_2 } from '@backstage/plugin-scaffolder-react';
-import { ListActionsResponse as ListActionsResponse_2 } from '@backstage/plugin-scaffolder-react';
-import { ListTemplatingExtensionsResponse } from '@backstage/plugin-scaffolder-react';
-import { LogEvent as LogEvent_2 } from '@backstage/plugin-scaffolder-react';
-import { Observable } from '@backstage/types';
+import { ListActionsResponse as ListActionsResponse_2 } from '@backstage/plugin-scaffolder-common';
+import { LogEvent as LogEvent_2 } from '@backstage/plugin-scaffolder-common';
 import { PathParams } from '@backstage/core-plugin-api';
 import { PropsWithChildren } from 'react';
 import { ReactNode } from 'react';
 import { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import { RouteRef } from '@backstage/core-plugin-api';
-import { ScaffolderApi as ScaffolderApi_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderDryRunOptions as ScaffolderDryRunOptions_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderDryRunResponse as ScaffolderDryRunResponse_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderGetIntegrationsListOptions as ScaffolderGetIntegrationsListOptions_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderGetIntegrationsListResponse as ScaffolderGetIntegrationsListResponse_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderOutputLink } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderScaffoldOptions as ScaffolderScaffoldOptions_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderScaffoldResponse as ScaffolderScaffoldResponse_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderStreamLogsOptions as ScaffolderStreamLogsOptions_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderTask as ScaffolderTask_2 } from '@backstage/plugin-scaffolder-react';
+import { ScaffolderApi as ScaffolderApi_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderClient as ScaffolderClient_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderDryRunOptions as ScaffolderDryRunOptions_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderDryRunResponse as ScaffolderDryRunResponse_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderGetIntegrationsListOptions as ScaffolderGetIntegrationsListOptions_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderGetIntegrationsListResponse as ScaffolderGetIntegrationsListResponse_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderOutputLink } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderScaffoldOptions as ScaffolderScaffoldOptions_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderScaffoldResponse as ScaffolderScaffoldResponse_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderStreamLogsOptions as ScaffolderStreamLogsOptions_2 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderTask as ScaffolderTask_2 } from '@backstage/plugin-scaffolder-common';
 import { ScaffolderTaskOutput as ScaffolderTaskOutput_2 } from '@backstage/plugin-scaffolder-react';
-import { ScaffolderTaskStatus as ScaffolderTaskStatus_2 } from '@backstage/plugin-scaffolder-react';
+import { ScaffolderTaskOutput as ScaffolderTaskOutput_3 } from '@backstage/plugin-scaffolder-common';
+import { ScaffolderTaskStatus as ScaffolderTaskStatus_2 } from '@backstage/plugin-scaffolder-common';
 import { ScaffolderUseTemplateSecrets as ScaffolderUseTemplateSecrets_2 } from '@backstage/plugin-scaffolder-react';
-import { ScmIntegrationRegistry } from '@backstage/integration';
 import { SubRouteRef } from '@backstage/core-plugin-api';
 import { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import { TemplateGroupFilter } from '@backstage/plugin-scaffolder-react';
 import { TemplateListPageProps } from '@backstage/plugin-scaffolder/alpha';
-import { TemplateParameterSchema as TemplateParameterSchema_2 } from '@backstage/plugin-scaffolder-react';
+import { TemplateParameterSchema as TemplateParameterSchema_2 } from '@backstage/plugin-scaffolder-common';
 import { TemplateWizardPageProps } from '@backstage/plugin-scaffolder/alpha';
 import { z } from 'zod';
 
@@ -78,6 +74,7 @@ export const EntityNamePickerFieldExtension: FieldExtensionComponent_2<
 export const EntityPickerFieldExtension: FieldExtensionComponent_2<
   string,
   {
+    autoSelect?: boolean | undefined;
     defaultKind?: string | undefined;
     defaultNamespace?: string | false | undefined;
     catalogFilter?:
@@ -107,6 +104,7 @@ export const EntityPickerFieldExtension: FieldExtensionComponent_2<
 export const EntityPickerFieldSchema: FieldSchema_2<
   string,
   {
+    autoSelect?: boolean | undefined;
     defaultKind?: string | undefined;
     defaultNamespace?: string | false | undefined;
     catalogFilter?:
@@ -253,6 +251,7 @@ export type MyGroupsPickerUiOptions = NonNullable<
 export const OwnedEntityPickerFieldExtension: FieldExtensionComponent_2<
   string,
   {
+    autoSelect?: boolean | undefined;
     defaultKind?: string | undefined;
     defaultNamespace?: string | false | undefined;
     catalogFilter?:
@@ -282,6 +281,7 @@ export const OwnedEntityPickerFieldExtension: FieldExtensionComponent_2<
 export const OwnedEntityPickerFieldSchema: FieldSchema_2<
   string,
   {
+    autoSelect?: boolean | undefined;
     defaultKind?: string | undefined;
     defaultNamespace?: string | false | undefined;
     catalogFilter?:
@@ -396,6 +396,30 @@ export const RepoBranchPickerFieldExtension: FieldExtensionComponent_2<
 >;
 
 // @public
+export const RepoOwnerPickerFieldExtension: FieldExtensionComponent_2<
+  string,
+  {
+    host?: string | undefined;
+    requestUserCredentials?:
+      | {
+          secretsKey: string;
+          additionalScopes?:
+            | {
+                azure?: string[] | undefined;
+                github?: string[] | undefined;
+                gitlab?: string[] | undefined;
+                bitbucket?: string[] | undefined;
+                gerrit?: string[] | undefined;
+                gitea?: string[] | undefined;
+              }
+            | undefined;
+        }
+      | undefined;
+    excludedOwners?: string[] | undefined;
+  }
+>;
+
+// @public
 export const repoPickerValidation: (
   value: string,
   validation: FieldValidation,
@@ -408,11 +432,11 @@ export const repoPickerValidation: (
 export const RepoUrlPickerFieldExtension: FieldExtensionComponent_2<
   string,
   {
-    allowedHosts?: string[] | undefined;
     allowedOrganizations?: string[] | undefined;
     allowedOwners?: string[] | undefined;
     allowedProjects?: string[] | undefined;
     allowedRepos?: string[] | undefined;
+    allowedHosts?: string[] | undefined;
     requestUserCredentials?:
       | {
           secretsKey: string;
@@ -435,11 +459,11 @@ export const RepoUrlPickerFieldExtension: FieldExtensionComponent_2<
 export const RepoUrlPickerFieldSchema: FieldSchema_2<
   string,
   {
-    allowedHosts?: string[] | undefined;
     allowedOrganizations?: string[] | undefined;
     allowedOwners?: string[] | undefined;
     allowedProjects?: string[] | undefined;
     allowedRepos?: string[] | undefined;
+    allowedHosts?: string[] | undefined;
     requestUserCredentials?:
       | {
           secretsKey: string;
@@ -496,6 +520,7 @@ export type RouterProps = {
     actions?: boolean;
     tasks?: boolean;
     create?: boolean;
+    templatingExtensions?: boolean;
   };
 };
 
@@ -505,70 +530,8 @@ export type ScaffolderApi = ScaffolderApi_2;
 // @public @deprecated (undocumented)
 export const scaffolderApiRef: ApiRef<ScaffolderApi_2>;
 
-// @public
-export class ScaffolderClient implements ScaffolderApi_2 {
-  constructor(options: {
-    discoveryApi: DiscoveryApi;
-    fetchApi: FetchApi;
-    identityApi?: IdentityApi;
-    scmIntegrationsApi: ScmIntegrationRegistry;
-    useLongPollingLogs?: boolean;
-  });
-  // (undocumented)
-  autocomplete({
-    token,
-    resource,
-    provider,
-    context,
-  }: {
-    token: string;
-    provider: string;
-    resource: string;
-    context?: Record<string, string>;
-  }): Promise<{
-    results: {
-      title?: string;
-      id: string;
-    }[];
-  }>;
-  // (undocumented)
-  cancelTask(taskId: string): Promise<void>;
-  // (undocumented)
-  dryRun(
-    options: ScaffolderDryRunOptions_2,
-  ): Promise<ScaffolderDryRunResponse_2>;
-  // (undocumented)
-  getIntegrationsList(
-    options: ScaffolderGetIntegrationsListOptions_2,
-  ): Promise<ScaffolderGetIntegrationsListResponse_2>;
-  // (undocumented)
-  getTask(taskId: string): Promise<ScaffolderTask_2>;
-  // (undocumented)
-  getTemplateParameterSchema(
-    templateRef: string,
-  ): Promise<TemplateParameterSchema_2>;
-  // (undocumented)
-  listActions(): Promise<ListActionsResponse_2>;
-  // (undocumented)
-  listTasks(options: {
-    filterByOwnership: 'owned' | 'all';
-    limit?: number;
-    offset?: number;
-  }): Promise<{
-    tasks: ScaffolderTask_2[];
-    totalTasks?: number;
-  }>;
-  // (undocumented)
-  listTemplatingExtensions(): Promise<ListTemplatingExtensionsResponse>;
-  // (undocumented)
-  retry?(taskId: string): Promise<void>;
-  // (undocumented)
-  scaffold(
-    options: ScaffolderScaffoldOptions_2,
-  ): Promise<ScaffolderScaffoldResponse_2>;
-  // (undocumented)
-  streamLogs(options: ScaffolderStreamLogsOptions_2): Observable<LogEvent_2>;
-}
+// @public @deprecated
+export class ScaffolderClient extends ScaffolderClient_2 {}
 
 // @public @deprecated (undocumented)
 export type ScaffolderDryRunOptions = ScaffolderDryRunOptions_2;
@@ -644,7 +607,7 @@ export type ScaffolderStreamLogsOptions = ScaffolderStreamLogsOptions_2;
 export type ScaffolderTask = ScaffolderTask_2;
 
 // @public @deprecated (undocumented)
-export type ScaffolderTaskOutput = ScaffolderTaskOutput_2;
+export type ScaffolderTaskOutput = ScaffolderTaskOutput_3;
 
 // @public @deprecated (undocumented)
 export type ScaffolderTaskStatus = ScaffolderTaskStatus_2;

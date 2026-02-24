@@ -24,7 +24,7 @@ import express from 'express';
 import request from 'supertest';
 import { createRouter } from './router';
 import { wrapServer } from '@backstage/backend-openapi-utils/testUtils';
-import { Server } from 'http';
+import { Server } from 'node:http';
 import {
   mockCredentials,
   mockErrorHandler,
@@ -106,7 +106,7 @@ describe('createRouter', () => {
         expect.objectContaining({
           error: {
             name: 'Error',
-            message: `There was a problem performing the search query: ${error.message}`,
+            message: `There was a problem performing the search query`,
           },
         }),
       );

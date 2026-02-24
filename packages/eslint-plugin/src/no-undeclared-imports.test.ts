@@ -15,7 +15,7 @@
  */
 
 import { RuleTester } from 'eslint';
-import { join as joinPath } from 'path';
+import { join as joinPath } from 'node:path';
 import rule from '../rules/no-undeclared-imports';
 
 jest.mock('child_process', () => ({
@@ -24,6 +24,7 @@ jest.mock('child_process', () => ({
 
 const RULE = 'no-undeclared-imports';
 const FIXTURE = joinPath(__dirname, '__fixtures__/monorepo');
+//
 
 const ERR_UNDECLARED = (
   name: string,
@@ -246,26 +247,14 @@ ruleTester.run(RULE, rule, {
     },
     {
       code: `import 'react-dom'`,
-      output: `import 'directive:add-import:dependencies:react-dom'`,
+      output: `import 'directive:add-import:peerDependencies:react-dom'`,
       filename: joinPath(FIXTURE, 'packages/foo/src/index.ts'),
       errors: [
         ERR_UNDECLARED(
           'react-dom',
-          'dependencies',
+          'peerDependencies',
           joinPath('packages', 'foo'),
-        ),
-      ],
-    },
-    {
-      code: `import 'react-dom'`,
-      output: `import 'directive:add-import:devDependencies:react-dom'`,
-      filename: joinPath(FIXTURE, 'packages/foo/src/index.test.ts'),
-      errors: [
-        ERR_UNDECLARED(
-          'react-dom',
-          'devDependencies',
-          joinPath('packages', 'foo'),
-          '--dev',
+          '--peer',
         ),
       ],
     },

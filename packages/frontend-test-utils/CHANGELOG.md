@@ -1,5 +1,444 @@
 # @backstage/frontend-test-utils
 
+## 0.5.0
+
+### Minor Changes
+
+- 09a6aad: **BREAKING**: Removed the `TestApiRegistry` class, use `TestApiProvider` directly instead, storing reused APIs in a variable, e.g. `const apis = [...] as const`.
+- d2ac2ec: Added `MockAlertApi` and `MockFeatureFlagsApi` implementations to the `mockApis` namespace. The mock implementations include useful testing methods like `clearAlerts()`, `waitForAlert()`, `getState()`, `setState()`, and `clearState()` for better test ergonomics.
+- 09a6aad: **BREAKING**: The `mockApis` namespace is no longer a re-export from `@backstage/test-utils`. It's now a standalone namespace with mock implementations of most core APIs. Mock API instances can be passed directly to `TestApiProvider`, `renderInTestApp`, and `renderTestApp` without needing `[apiRef, impl]` tuples. As part of this change, the `.factory()` method on some mocks has been removed, since it's now redundant.
+
+  ```tsx
+  // Before
+  import { mockApis } from '@backstage/frontend-test-utils';
+
+  renderInTestApp(<MyComponent />, {
+    apis: [[identityApiRef, mockApis.identity()]],
+  });
+
+  // After - mock APIs can be passed directly
+  renderInTestApp(<MyComponent />, {
+    apis: [mockApis.identity()],
+  });
+  ```
+
+  This change also adds `createApiMock`, a public utility for creating mock API factories, intended for plugin authors to create their own `.mock()` variants.
+
+### Patch Changes
+
+- 22864b7: Added an `apis` option to `createExtensionTester`, `renderInTestApp`, and `renderTestApp` to override APIs when testing extensions. Use the `mockApis` helpers to create mock implementations:
+
+  ```typescript
+  import { identityApiRef } from '@backstage/frontend-plugin-api';
+  import { mockApis } from '@backstage/frontend-test-utils';
+
+  // Override APIs in createExtensionTester
+  const tester = createExtensionTester(myExtension, {
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+
+  // Override APIs in renderInTestApp
+  renderInTestApp(<MyComponent />, {
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+
+  // Override APIs in renderTestApp
+  renderTestApp({
+    extensions: [myExtension],
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+  ```
+
+- 15ed3f9: Added `snapshot()` method to `ExtensionTester`, which returns a tree-shaped representation of the resolved extension hierarchy. Convenient to use with `toMatchInlineSnapshot()`.
+- 013ec22: Added `mountedRoutes` option to `renderTestApp` for binding route refs to paths, matching the existing option in `renderInTestApp`:
+
+  ```typescript
+  renderTestApp({
+    extensions: [...],
+    mountedRoutes: {
+      '/my-path': myRouteRef,
+    },
+  });
+  ```
+
+- d7dd5bd: Fixed Router deprecation warning and switched to using new `RouterBlueprint` from `@backstage/plugin-app-api`.
+- a7e0d50: Updated `react-router-dom` peer dependency to `^6.30.2` and explicitly disabled v7 future flags to suppress deprecation warnings.
+- 69d880e: Bump to latest zod to ensure it has the latest features
+- Updated dependencies
+  - @backstage/frontend-app-api@0.15.0
+  - @backstage/core-app-api@1.19.5
+  - @backstage/frontend-plugin-api@0.14.0
+  - @backstage/plugin-app-react@0.2.0
+  - @backstage/plugin-app@0.4.0
+  - @backstage/core-plugin-api@1.12.3
+  - @backstage/plugin-permission-react@0.4.40
+  - @backstage/version-bridge@1.0.12
+  - @backstage/test-utils@1.7.15
+  - @backstage/plugin-permission-common@0.9.6
+
+## 0.5.0-next.2
+
+### Minor Changes
+
+- 09a6aad: **BREAKING**: Removed the `TestApiRegistry` class, use `TestApiProvider` directly instead, storing reused APIs in a variable, e.g. `const apis = [...] as const`.
+- d2ac2ec: Added `MockAlertApi` and `MockFeatureFlagsApi` implementations to the `mockApis` namespace. The mock implementations include useful testing methods like `clearAlerts()`, `waitForAlert()`, `getState()`, `setState()`, and `clearState()` for better test ergonomics.
+- 09a6aad: **BREAKING**: The `mockApis` namespace is no longer a re-export from `@backstage/test-utils`. It's now a standalone namespace with mock implementations of most core APIs. Mock API instances can be passed directly to `TestApiProvider`, `renderInTestApp`, and `renderTestApp` without needing `[apiRef, impl]` tuples. As part of this change, the `.factory()` method on some mocks has been removed, since it's now redundant.
+
+  ```tsx
+  // Before
+  import { mockApis } from '@backstage/frontend-test-utils';
+
+  renderInTestApp(<MyComponent />, {
+    apis: [[identityApiRef, mockApis.identity()]],
+  });
+
+  // After - mock APIs can be passed directly
+  renderInTestApp(<MyComponent />, {
+    apis: [mockApis.identity()],
+  });
+  ```
+
+  This change also adds `createApiMock`, a public utility for creating mock API factories, intended for plugin authors to create their own `.mock()` variants.
+
+### Patch Changes
+
+- 15ed3f9: Added `snapshot()` method to `ExtensionTester`, which returns a tree-shaped representation of the resolved extension hierarchy. Convenient to use with `toMatchInlineSnapshot()`.
+- 013ec22: Added `mountedRoutes` option to `renderTestApp` for binding route refs to paths, matching the existing option in `renderInTestApp`:
+
+  ```typescript
+  renderTestApp({
+    extensions: [...],
+    mountedRoutes: {
+      '/my-path': myRouteRef,
+    },
+  });
+  ```
+
+- a7e0d50: Prepare for React Router v7 migration by updating to v6.30.2 across all NFS packages and enabling v7 future flags. Convert routes from splat paths to parent/child structure with Outlet components.
+- Updated dependencies
+  - @backstage/core-app-api@1.19.5-next.1
+  - @backstage/frontend-plugin-api@0.14.0-next.2
+  - @backstage/frontend-app-api@0.15.0-next.2
+  - @backstage/core-plugin-api@1.12.3-next.1
+  - @backstage/plugin-permission-react@0.4.40-next.1
+  - @backstage/version-bridge@1.0.12-next.0
+  - @backstage/test-utils@1.7.15-next.2
+  - @backstage/plugin-app@0.4.0-next.2
+  - @backstage/plugin-app-react@0.1.1-next.0
+
+## 0.4.6-next.1
+
+### Patch Changes
+
+- 22864b7: Added an `apis` option to `createExtensionTester`, `renderInTestApp`, and `renderTestApp` to override APIs when testing extensions. Use the `mockApis` helpers to create mock implementations:
+
+  ```typescript
+  import { identityApiRef } from '@backstage/frontend-plugin-api';
+  import { mockApis } from '@backstage/frontend-test-utils';
+
+  // Override APIs in createExtensionTester
+  const tester = createExtensionTester(myExtension, {
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+
+  // Override APIs in renderInTestApp
+  renderInTestApp(<MyComponent />, {
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+
+  // Override APIs in renderTestApp
+  renderTestApp({
+    extensions: [myExtension],
+    apis: [
+      [
+        identityApiRef,
+        mockApis.identity({ userEntityRef: 'user:default/guest' }),
+      ],
+    ],
+  });
+  ```
+
+- Updated dependencies
+  - @backstage/frontend-app-api@0.15.0-next.1
+  - @backstage/frontend-plugin-api@0.14.0-next.1
+  - @backstage/plugin-app@0.4.0-next.1
+  - @backstage/test-utils@1.7.15-next.1
+
+## 0.4.5-next.0
+
+### Patch Changes
+
+- d7dd5bd: Fixed Router deprecation warning and switched to using new `RouterBlueprint` from `@backstage/plugin-app-api`.
+- 69d880e: Bump to latest zod to ensure it has the latest features
+- Updated dependencies
+  - @backstage/frontend-app-api@0.14.1-next.0
+  - @backstage/frontend-plugin-api@0.14.0-next.0
+  - @backstage/plugin-app@0.4.0-next.0
+  - @backstage/plugin-app-react@0.1.1-next.0
+  - @backstage/config@1.3.6
+  - @backstage/test-utils@1.7.15-next.0
+  - @backstage/types@1.2.2
+  - @backstage/version-bridge@1.0.11
+
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.13.3
+  - @backstage/plugin-app@0.3.4
+  - @backstage/frontend-app-api@0.14.0
+
+## 0.4.3-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/plugin-app@0.3.4-next.0
+  - @backstage/frontend-app-api@0.13.4-next.0
+  - @backstage/frontend-plugin-api@0.13.2
+
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/plugin-app@0.3.3
+  - @backstage/frontend-plugin-api@0.13.2
+  - @backstage/test-utils@1.7.14
+  - @backstage/frontend-app-api@0.13.3
+
+## 0.4.2-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.13.2-next.0
+  - @backstage/test-utils@1.7.14-next.0
+  - @backstage/plugin-app@0.3.3-next.0
+  - @backstage/frontend-app-api@0.13.3-next.0
+  - @backstage/config@1.3.6
+  - @backstage/types@1.2.2
+  - @backstage/version-bridge@1.0.11
+
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.13.0
+  - @backstage/frontend-app-api@0.13.2
+  - @backstage/config@1.3.6
+  - @backstage/plugin-app@0.3.2
+  - @backstage/test-utils@1.7.13
+
+## 0.4.1-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-app-api@0.13.2-next.0
+  - @backstage/config@1.3.6-next.0
+  - @backstage/frontend-plugin-api@0.12.2-next.0
+  - @backstage/test-utils@1.7.13-next.0
+  - @backstage/types@1.2.2
+  - @backstage/version-bridge@1.0.11
+  - @backstage/plugin-app@0.3.2-next.0
+
+## 0.4.0
+
+### Minor Changes
+
+- c41dd80: **BREAKING**: Removed the `extensions` option from `renderInTestApp`. If you need to pass extensions to the test app, use the new `renderTestApp` utility instead.
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/plugin-app@0.3.1
+  - @backstage/frontend-plugin-api@0.12.1
+  - @backstage/config@1.3.5
+  - @backstage/frontend-app-api@0.13.1
+  - @backstage/test-utils@1.7.12
+
+## 0.3.7-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.4-next.0
+  - @backstage/frontend-app-api@0.13.1-next.1
+  - @backstage/test-utils@1.7.12-next.0
+  - @backstage/frontend-plugin-api@0.12.1-next.1
+  - @backstage/plugin-app@0.3.1-next.1
+
+## 0.3.7-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.12.1-next.0
+  - @backstage/plugin-app@0.3.1-next.0
+  - @backstage/config@1.3.3
+  - @backstage/frontend-app-api@0.13.1-next.0
+  - @backstage/test-utils@1.7.11
+  - @backstage/types@1.2.2
+  - @backstage/version-bridge@1.0.11
+
+## 0.3.6
+
+### Patch Changes
+
+- 6516c3d: Internal update to use and throw app errors.
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.12.0
+  - @backstage/plugin-app@0.3.0
+  - @backstage/frontend-app-api@0.13.0
+  - @backstage/types@1.2.2
+
+## 0.3.6-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.11.1-next.0
+  - @backstage/frontend-app-api@0.12.1-next.0
+  - @backstage/plugin-app@0.2.1-next.0
+
+## 0.3.5
+
+### Patch Changes
+
+- df7bd3b: Updated import of the `FrontendFeature` type.
+- 5d31d66: Updated the usage of the `RouterBlueprint` and `AppRootWrapperBlueprint` to use the lowercase `component` parameter
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.11.0
+  - @backstage/frontend-app-api@0.12.0
+  - @backstage/plugin-app@0.2.0
+  - @backstage/test-utils@1.7.11
+
+## 0.3.5-next.2
+
+### Patch Changes
+
+- df7bd3b: Updated import of the `FrontendFeature` type.
+- 5d31d66: Updated the usage of the `RouterBlueprint` and `AppRootWrapperBlueprint` to use the lowercase `component` parameter
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.11.0-next.1
+  - @backstage/frontend-app-api@0.12.0-next.2
+  - @backstage/plugin-app@0.2.0-next.1
+  - @backstage/config@1.3.3
+  - @backstage/test-utils@1.7.11-next.0
+  - @backstage/types@1.2.1
+  - @backstage/version-bridge@1.0.11
+
+## 0.3.5-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-app-api@0.11.5-next.1
+  - @backstage/plugin-app@0.2.0-next.0
+  - @backstage/frontend-plugin-api@0.11.0-next.0
+  - @backstage/test-utils@1.7.11-next.0
+  - @backstage/config@1.3.3
+  - @backstage/types@1.2.1
+  - @backstage/version-bridge@1.0.11
+
+## 0.3.5-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-app-api@0.11.5-next.0
+  - @backstage/plugin-app@0.1.11
+  - @backstage/frontend-plugin-api@0.10.4
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.3
+  - @backstage/frontend-app-api@0.11.4
+  - @backstage/plugin-app@0.1.11
+  - @backstage/frontend-plugin-api@0.10.4
+  - @backstage/test-utils@1.7.10
+
+## 0.3.4-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.3-next.0
+  - @backstage/frontend-app-api@0.11.4-next.1
+  - @backstage/test-utils@1.7.10-next.1
+  - @backstage/frontend-plugin-api@0.10.4-next.1
+  - @backstage/plugin-app@0.1.11-next.1
+
+## 0.3.4-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/plugin-app@0.1.11-next.0
+  - @backstage/test-utils@1.7.10-next.0
+  - @backstage/config@1.3.2
+  - @backstage/frontend-app-api@0.11.4-next.0
+  - @backstage/frontend-plugin-api@0.10.4-next.0
+  - @backstage/types@1.2.1
+  - @backstage/version-bridge@1.0.11
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/plugin-app@0.1.10
+  - @backstage/frontend-plugin-api@0.10.3
+  - @backstage/frontend-app-api@0.11.3
+  - @backstage/config@1.3.2
+  - @backstage/test-utils@1.7.9
+  - @backstage/types@1.2.1
+  - @backstage/version-bridge@1.0.11
+
+## 0.3.3-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/frontend-plugin-api@0.10.3-next.1
+  - @backstage/plugin-app@0.1.10-next.1
+  - @backstage/config@1.3.2
+  - @backstage/frontend-app-api@0.11.3-next.1
+  - @backstage/test-utils@1.7.8
+  - @backstage/types@1.2.1
+  - @backstage/version-bridge@1.0.11
+
 ## 0.3.3-next.0
 
 ### Patch Changes

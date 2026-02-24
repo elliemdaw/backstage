@@ -33,6 +33,7 @@ import {
   all_saas_subgroup_1_members,
   all_saas_subgroup_2_members,
   group_with_subgroups_response,
+  projects_with_catalog_info_yaml,
 } from './mocks';
 
 const httpHandlers = [
@@ -78,6 +79,13 @@ const httpHandlers = [
     return res(
       ctx.set('x-next-page', ''),
       ctx.json(group_with_subgroups_response),
+    );
+  }),
+
+  rest.get(`${apiBaseUrl}/groups/group1`, (_, res, ctx) => {
+    return res(
+      ctx.set('x-next-page', ''),
+      ctx.json(all_groups_response.find(g => g.full_path === 'group1')),
     );
   }),
 
@@ -190,6 +198,38 @@ const httpGroupFindByEncodedPathDynamic = all_groups_response.flatMap(group => [
   ),
 ]);
 
+const httpSearchFilesInGroupDynamic = all_groups_response.map(group => {
+  return rest.get(
+    `${apiBaseUrl}/groups/${encodeURIComponent(group.full_path)}/search`,
+    (req, res, ctx) => {
+      const scope = req.url.searchParams.get('scope');
+
+      if (scope !== 'blobs') {
+        return res(ctx.status(400), ctx.text('400 Bad Request'));
+      }
+
+      const searchResults = projects_with_catalog_info_yaml
+        .filter(project =>
+          project.path_with_namespace?.startsWith(group.full_path),
+        )
+        .map(project => {
+          return {
+            basename: 'catalog-info',
+            data: 'catalog-info.yaml',
+            path: 'catalog-info.yaml',
+            filename: 'catalog-info.yaml',
+            id: null,
+            ref: project.default_branch,
+            startline: 0,
+            project_id: project.id,
+          };
+        });
+
+      return res(ctx.json(searchResults));
+    },
+  );
+});
+
 const httpGroupFindByIdDynamic = all_groups_response.map(group => {
   return rest.get(`${apiBaseUrl}/groups/${group.id}`, (_, res, ctx) => {
     return res(ctx.json(all_groups_response.find(g => g.id === group.id)));
@@ -229,6 +269,26 @@ const httpGroupListDescendantProjectsByName = all_groups_response.map(group => {
     },
   );
 });
+
+const httpGroupListDescendantProjectsByFullPath = all_groups_response.map(
+  group => {
+    return rest.get(
+      `${apiBaseUrl}/groups/${encodeURIComponent(group.full_path)}/projects`,
+      (req, res, ctx) => {
+        const archived = req.url.searchParams.get('archived');
+
+        const projectsInGroup = all_projects_response.filter(
+          p =>
+            p.path_with_namespace?.includes(group.full_path) &&
+            (archived === 'false' ? !p.archived : true),
+        );
+
+        return res(ctx.json(projectsInGroup));
+      },
+    );
+  },
+);
+
 const httpGroupFindByNameDynamic = all_groups_response.map(group => {
   return rest.get(`${apiBaseUrl}/groups/${group.name}`, (_, res, ctx) => {
     return res(ctx.json(all_groups_response.find(g => g.name === group.name)));
@@ -239,13 +299,13 @@ const httpProjectFindByIdDynamic = all_projects_response.map(project => {
     return res(ctx.json(all_projects_response.find(p => p.id === project.id)));
   });
 });
-const httpProjectCatalogDynamic = all_projects_response.map(project => {
-  const path: string = project.path_with_namespace
-    ? project.path_with_namespace!.replace(/\//g, '%2F')
-    : `${project.path_with_namespace}%2F${project.name}`;
 
+/**
+ * See https://docs.gitlab.com/api/repository_files/#get-file-from-repository
+ */
+const httpProjectCatalogDynamic = all_projects_response.flatMap(project => {
   return rest.head(
-    `${apiBaseUrl}/projects/${path}/repository/files/catalog-info.yaml`,
+    `${apiBaseUrl}/projects/${project.id.toString()}/repository/files/catalog-info.yaml`,
     (req, res, ctx) => {
       const branch = req.url.searchParams.get('ref');
       if (
@@ -711,6 +771,8 @@ export const handlers = [
   ...httpGroupFindByNameDynamic,
   ...httpGroupListDescendantProjectsById,
   ...httpGroupListDescendantProjectsByName,
+  ...httpGroupListDescendantProjectsByFullPath,
   ...graphqlHandlers,
   ...httpGroupFindByEncodedPathDynamic,
+  ...httpSearchFilesInGroupDynamic,
 ];

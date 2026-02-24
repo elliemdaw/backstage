@@ -2,11 +2,8 @@
 id: creating
 title: Creating Utility APIs
 sidebar_label: Creating APIs
-# prettier-ignore
 description: Creating new utility APIs in your plugins and app
 ---
-
-> **NOTE: The new frontend system is in alpha and is only supported by a small number of plugins.**
 
 This section describes how to make a Utility API from scratch, or to add configurability and inputs to an existing one. If you are instead interested in migrating an existing Utility API from the old frontend system, check out the [Migrating APIs section](../building-plugins/05-migrating.md#migrating-apis).
 
@@ -39,6 +36,9 @@ export const workApiRef = createApiRef<WorkApi>({
 
 Both of these are properly exported publicly from the package, so that consumers can reach them.
 
+The frontend system infers the owning plugin for an API from the `ApiRef` id, so
+use the pattern `plugin.<plugin-id>.*` to make ownership explicit. This ensures that other plugins can't mistakenly override your API.
+
 ## Providing an extension through your plugin
 
 The plugin itself now wants to provide this API and its default implementation, in the form of an API extension. Doing so means that when users install the Example plugin, an instance of the Work utility API will also be automatically available in their apps - both to the Example plugin itself, and to others. We do this in the main plugin package, not the `-react` package.
@@ -46,7 +46,6 @@ The plugin itself now wants to provide this API and its default implementation, 
 ```tsx title="in @internal/plugin-example"
 import {
   ApiBlueprint,
-  createApiFactory,
   createFrontendPlugin,
   storageApiRef,
   StorageApi,
@@ -64,15 +63,14 @@ class WorkImpl implements WorkApi {
 
 const workApi = ApiBlueprint.make({
   name: 'work',
-  params: {
-    factory: createApiFactory({
+  params: defineParams =>
+    defineParams({
       api: workApiRef,
       deps: { storageApi: storageApiRef },
       factory: ({ storageApi }) => {
         return new WorkImpl({ storageApi });
       },
     }),
-  },
 });
 
 /**

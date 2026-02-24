@@ -19,6 +19,9 @@ import splitToChunks from 'lodash/chunk';
 import { v4 as uuid } from 'uuid';
 import { StitchingStrategy } from '../../../stitching/types';
 import { DbFinalEntitiesRow, DbRefreshStateRow } from '../../tables';
+import { retryOnDeadlock } from '../../util';
+
+const UPDATE_CHUNK_SIZE = 100; // Smaller chunks reduce contention
 
 /**
  * Marks a number of entities for stitching some time in the near
@@ -32,9 +35,8 @@ export async function markForStitching(options: {
   entityRefs?: Iterable<string>;
   entityIds?: Iterable<string>;
 }): Promise<void> {
-  // Splitting to chunks just to cover pathological cases that upset the db
-  const entityRefs = split(options.entityRefs);
-  const entityIds = split(options.entityIds);
+  const entityRefs = sortSplit(options.entityRefs);
+  const entityIds = sortSplit(options.entityIds);
   const knex = options.knex;
   const mode = options.strategy.mode;
 
@@ -45,19 +47,16 @@ export async function markForStitching(options: {
         .update({
           hash: 'force-stitching',
         })
-        .whereIn(
-          'entity_id',
-          knex<DbRefreshStateRow>('refresh_state')
-            .select('entity_id')
-            .whereIn('entity_ref', chunk),
-        );
-      await knex
-        .table<DbRefreshStateRow>('refresh_state')
-        .update({
-          result_hash: 'force-stitching',
-          next_update_at: knex.fn.now(),
-        })
         .whereIn('entity_ref', chunk);
+      await retryOnDeadlock(async () => {
+        await knex
+          .table<DbRefreshStateRow>('refresh_state')
+          .update({
+            result_hash: 'force-stitching',
+            next_update_at: knex.fn.now(),
+          })
+          .whereIn('entity_ref', chunk);
+      }, knex);
     }
 
     for (const chunk of entityIds) {
@@ -67,44 +66,53 @@ export async function markForStitching(options: {
           hash: 'force-stitching',
         })
         .whereIn('entity_id', chunk);
-      await knex
-        .table<DbRefreshStateRow>('refresh_state')
-        .update({
-          result_hash: 'force-stitching',
-          next_update_at: knex.fn.now(),
-        })
-        .whereIn('entity_id', chunk);
+      await retryOnDeadlock(async () => {
+        await knex
+          .table<DbRefreshStateRow>('refresh_state')
+          .update({
+            result_hash: 'force-stitching',
+            next_update_at: knex.fn.now(),
+          })
+          .whereIn('entity_id', chunk);
+      }, knex);
     }
   } else if (mode === 'deferred') {
     // It's OK that this is shared across refresh state rows; it just needs to
     // be uniquely generated for every new stitch request.
     const ticket = uuid();
 
+    // Update by primary key in deterministic order to avoid deadlocks
     for (const chunk of entityRefs) {
-      await knex<DbRefreshStateRow>('refresh_state')
-        .update({
-          next_stitch_at: knex.fn.now(),
-          next_stitch_ticket: ticket,
-        })
-        .whereIn('entity_ref', chunk);
+      await retryOnDeadlock(async () => {
+        await knex<DbRefreshStateRow>('refresh_state')
+          .update({
+            next_stitch_at: knex.fn.now(),
+            next_stitch_ticket: ticket,
+          })
+          .whereIn('entity_ref', chunk);
+      }, knex);
     }
 
     for (const chunk of entityIds) {
-      await knex<DbRefreshStateRow>('refresh_state')
-        .update({
-          next_stitch_at: knex.fn.now(),
-          next_stitch_ticket: ticket,
-        })
-        .whereIn('entity_id', chunk);
+      await retryOnDeadlock(async () => {
+        await knex<DbRefreshStateRow>('refresh_state')
+          .update({
+            next_stitch_at: knex.fn.now(),
+            next_stitch_ticket: ticket,
+          })
+          .whereIn('entity_id', chunk);
+      }, knex);
     }
   } else {
     throw new Error(`Unknown stitching strategy mode ${mode}`);
   }
 }
 
-function split(input: Iterable<string> | undefined): string[][] {
+function sortSplit(input: Iterable<string> | undefined): string[][] {
   if (!input) {
     return [];
   }
-  return splitToChunks(Array.isArray(input) ? input : [...input], 200);
+  const array = Array.isArray(input) ? input.slice() : [...input];
+  array.sort();
+  return splitToChunks(array, UPDATE_CHUNK_SIZE);
 }

@@ -16,11 +16,9 @@
 
 import { useCallback } from 'react';
 import { screen, fireEvent } from '@testing-library/react';
-import {
-  MockAnalyticsApi,
-  TestApiProvider,
-} from '@backstage/frontend-test-utils';
-import { analyticsApiRef, useAnalytics } from '@backstage/frontend-plugin-api';
+import { mockApis, TestApiProvider } from '@backstage/frontend-test-utils';
+import { useAnalytics } from '@backstage/frontend-plugin-api';
+import { Routes, Route } from 'react-router-dom';
 import { renderInTestApp } from './renderInTestApp';
 
 describe('renderInTestApp', () => {
@@ -46,10 +44,10 @@ describe('renderInTestApp', () => {
       );
     };
 
-    const analyticsApiMock = new MockAnalyticsApi();
+    const analyticsApiMock = mockApis.analytics();
 
     renderInTestApp(
-      <TestApiProvider apis={[[analyticsApiRef, analyticsApiMock]]}>
+      <TestApiProvider apis={[analyticsApiMock]}>
         <IndexPage />
       </TestApiProvider>,
     );
@@ -61,6 +59,51 @@ describe('renderInTestApp', () => {
         expect.objectContaining({
           action: 'click',
           subject: 'See details',
+        }),
+      ]),
+    );
+  });
+
+  it('should support setting different locations in the history stack', async () => {
+    renderInTestApp(
+      <Routes>
+        <Route path="/" element={<h1>Index Page</h1>} />
+        <Route path="/second-page" element={<h1>Second Page</h1>} />
+      </Routes>,
+      {
+        initialRouteEntries: ['/second-page'],
+      },
+    );
+
+    expect(screen.getByText('Second Page')).toBeInTheDocument();
+  });
+
+  it('should support API overrides via options', async () => {
+    const IndexPage = () => {
+      const analyticsApi = useAnalytics();
+      const handleClick = useCallback(() => {
+        analyticsApi.captureEvent('click', 'Test action');
+      }, [analyticsApi]);
+      return (
+        <div>
+          <button onClick={handleClick}>Click me</button>
+        </div>
+      );
+    };
+
+    const analyticsApiMock = mockApis.analytics();
+
+    renderInTestApp(<IndexPage />, {
+      apis: [analyticsApiMock],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Click me' }));
+
+    expect(analyticsApiMock.getEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'click',
+          subject: 'Test action',
         }),
       ]),
     );

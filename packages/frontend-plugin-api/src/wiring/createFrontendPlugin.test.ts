@@ -128,7 +128,9 @@ function createTestAppRoot({
 }) {
   return createApp({
     features: [...features],
-    configLoader: async () => ({ config: mockApis.config({ data: config }) }),
+    advanced: {
+      configLoader: async () => ({ config: mockApis.config({ data: config }) }),
+    },
   }).createRoot();
 }
 
@@ -140,11 +142,15 @@ describe('createFrontendPlugin', () => {
     expect(String(plugin)).toBe('Plugin{id=test}');
   });
 
-  it('should create an empty plugin with deprecated id option', () => {
-    const plugin = createFrontendPlugin({ id: 'test' });
-
-    expect(plugin).toBeDefined();
-    expect(String(plugin)).toBe('Plugin{id=test}');
+  it('should warn about invalid plugin IDs', () => {
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
+    createFrontendPlugin({ pluginId: 'invalid&id' });
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining("The pluginId 'invalid&id' will be invalid soon"),
+    );
+    consoleWarn.mockRestore();
   });
 
   it('should create a plugin with extension instances', async () => {

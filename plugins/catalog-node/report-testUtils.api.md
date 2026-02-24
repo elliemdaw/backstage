@@ -5,6 +5,8 @@
 ```ts
 import { AddLocationRequest } from '@backstage/catalog-client';
 import { AddLocationResponse } from '@backstage/catalog-client';
+import { AnalyzeLocationRequest } from '@backstage/plugin-catalog-common';
+import { AnalyzeLocationResponse } from '@backstage/plugin-catalog-common';
 import { CatalogApi } from '@backstage/catalog-client';
 import { CatalogRequestOptions } from '@backstage/catalog-client';
 import { CatalogService } from '@backstage/plugin-catalog-node';
@@ -23,8 +25,12 @@ import { GetLocationsResponse } from '@backstage/catalog-client';
 import { Location as Location_2 } from '@backstage/catalog-client';
 import { QueryEntitiesRequest } from '@backstage/catalog-client';
 import { QueryEntitiesResponse } from '@backstage/catalog-client';
+import { QueryLocationsInitialRequest } from '@backstage/catalog-client';
+import { QueryLocationsRequest } from '@backstage/catalog-client';
+import { QueryLocationsResponse } from '@backstage/catalog-client';
 import { ServiceFactory } from '@backstage/backend-plugin-api';
 import { ServiceMock } from '@backstage/backend-test-utils';
+import { StreamEntitiesRequest } from '@backstage/catalog-client';
 import { ValidateEntityResponse } from '@backstage/catalog-client';
 
 // @public
@@ -34,6 +40,11 @@ export interface CatalogServiceMock extends CatalogService, CatalogApi {
     location: AddLocationRequest,
     options?: CatalogServiceRequestOptions | CatalogRequestOptions,
   ): Promise<AddLocationResponse>;
+  // (undocumented)
+  analyzeLocation(
+    location: AnalyzeLocationRequest,
+    options?: CatalogServiceRequestOptions | CatalogRequestOptions,
+  ): Promise<AnalyzeLocationResponse>;
   // (undocumented)
   getEntities(
     request?: GetEntitiesRequest,
@@ -85,6 +96,11 @@ export interface CatalogServiceMock extends CatalogService, CatalogApi {
     options?: CatalogServiceRequestOptions | CatalogRequestOptions,
   ): Promise<QueryEntitiesResponse>;
   // (undocumented)
+  queryLocations(
+    request?: QueryLocationsRequest,
+    options?: CatalogServiceRequestOptions | CatalogRequestOptions,
+  ): Promise<QueryLocationsResponse>;
+  // (undocumented)
   refreshEntity(
     entityRef: string,
     options?: CatalogServiceRequestOptions | CatalogRequestOptions,
@@ -99,6 +115,16 @@ export interface CatalogServiceMock extends CatalogService, CatalogApi {
     id: string,
     options?: CatalogServiceRequestOptions | CatalogRequestOptions,
   ): Promise<void>;
+  // (undocumented)
+  streamEntities(
+    request?: StreamEntitiesRequest,
+    options?: CatalogServiceRequestOptions | CatalogRequestOptions,
+  ): AsyncIterable<Entity[]>;
+  // (undocumented)
+  streamLocations(
+    request?: QueryLocationsInitialRequest,
+    options?: CatalogServiceRequestOptions | CatalogRequestOptions,
+  ): AsyncIterable<Location_2[]>;
   // (undocumented)
   validateEntity(
     entity: Entity,

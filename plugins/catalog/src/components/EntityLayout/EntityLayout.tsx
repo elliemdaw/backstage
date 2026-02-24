@@ -361,7 +361,13 @@ export const EntityLayout = (props: EntityLayoutProps) => {
               UNSTABLE_extraContextMenuItems={UNSTABLE_extraContextMenuItems}
               UNSTABLE_contextMenuOptions={UNSTABLE_contextMenuOptions}
               onUnregisterEntity={() => setConfirmationDialogOpen(true)}
-              onInspectEntity={() => setSearchParams('inspect')}
+              onInspectEntity={() => {
+                setSearchParams(prev => {
+                  const newParams = new URLSearchParams(prev);
+                  newParams.set('inspect', '');
+                  return newParams;
+                });
+              }}
             />
           </>
         )}
@@ -383,11 +389,14 @@ export const EntityLayout = (props: EntityLayoutProps) => {
             NotFoundComponent
           ) : (
             <WarningPanel title={t('entityLabels.warningPanelTitle')}>
-              There is no {kind} with the requested{' '}
-              <Link to="https://backstage.io/docs/features/software-catalog/references">
-                kind, namespace, and name
-              </Link>
-              .
+              {t('entityPage.notFoundMessage', {
+                kind,
+                link: (
+                  <Link to="https://backstage.io/docs/features/software-catalog/references">
+                    {t('entityPage.notFoundLinkText')}
+                  </Link>
+                ),
+              })}
             </WarningPanel>
           )}
         </Content>
@@ -401,9 +410,21 @@ export const EntityLayout = (props: EntityLayoutProps) => {
               typeof InspectEntityDialog
             >['initialTab']) || undefined
           }
-          onSelect={newTab => setSearchParams(`inspect=${newTab}`)}
+          onSelect={newTab =>
+            setSearchParams(prev => {
+              const newParams = new URLSearchParams(prev);
+              newParams.set('inspect', newTab);
+              return newParams;
+            })
+          }
           open
-          onClose={() => setSearchParams()}
+          onClose={() =>
+            setSearchParams(prev => {
+              const newParams = new URLSearchParams(prev);
+              newParams.delete('inspect');
+              return newParams;
+            })
+          }
         />
       )}
 

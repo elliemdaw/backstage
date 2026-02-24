@@ -21,25 +21,28 @@ import {
   AuthService,
   DatabaseService,
   DiscoveryService,
+  HttpAuthService,
   LoggerService,
   RootConfigService,
 } from '@backstage/backend-plugin-api';
 import { AuthOwnershipResolver } from '@backstage/plugin-auth-node';
 import { CatalogService } from '@backstage/plugin-catalog-node';
 import { NotFoundError } from '@backstage/errors';
-import { bindOidcRouter } from '../identity/router';
 import { KeyStores } from '../identity/KeyStores';
 import { TokenFactory } from '../identity/TokenFactory';
-import { UserInfoDatabaseHandler } from '../identity/UserInfoDatabaseHandler';
+import { UserInfoDatabase } from '../database/UserInfoDatabase';
 import session from 'express-session';
 import connectSessionKnex from 'connect-session-knex';
 import passport from 'passport';
 import { AuthDatabase } from '../database/AuthDatabase';
-import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
+import { readBackstageTokenExpiration } from './readTokenExpiration';
 import { TokenIssuer } from '../identity/types';
 import { StaticTokenIssuer } from '../identity/StaticTokenIssuer';
 import { StaticKeyStore } from '../identity/StaticKeyStore';
 import { bindProviderRouters, ProviderFactories } from '../providers/router';
+import { OidcRouter } from './OidcRouter';
+import { OidcDatabase } from '../database/OidcDatabase';
+import { OfflineAccessService } from './OfflineAccessService';
 
 interface RouterOptions {
   logger: LoggerService;
@@ -51,6 +54,8 @@ interface RouterOptions {
   providerFactories?: ProviderFactories;
   catalog: CatalogService;
   ownershipResolver?: AuthOwnershipResolver;
+  httpAuth: HttpAuthService;
+  offlineAccess?: OfflineAccessService;
 }
 
 export async function createRouter(
@@ -60,9 +65,10 @@ export async function createRouter(
     logger,
     config,
     discovery,
-    database,
+    database: db,
     tokenFactoryAlgorithm,
     providerFactories = {},
+    httpAuth,
   } = options;
 
   const router = Router();
@@ -70,16 +76,16 @@ export async function createRouter(
   const appUrl = config.getString('app.baseUrl');
   const authUrl = await discovery.getExternalBaseUrl('auth');
   const backstageTokenExpiration = readBackstageTokenExpiration(config);
-  const authDb = AuthDatabase.create(database);
+  const database = AuthDatabase.create(db);
 
   const keyStore = await KeyStores.fromConfig(config, {
     logger,
-    database: authDb,
+    database,
   });
 
-  const userInfoDatabaseHandler = new UserInfoDatabaseHandler(
-    await authDb.get(),
-  );
+  const userInfo = await UserInfoDatabase.create({
+    database,
+  });
 
   const omitClaimsFromToken = config.getOptionalBoolean(
     'auth.omitIdentityTokenOwnershipClaim',
@@ -94,7 +100,6 @@ export async function createRouter(
         logger: logger.child({ component: 'token-factory' }),
         issuer: authUrl,
         sessionExpirationSeconds: backstageTokenExpiration,
-        userInfoDatabaseHandler,
         omitClaimsFromToken,
       },
       keyStore as StaticKeyStore,
@@ -108,7 +113,6 @@ export async function createRouter(
       algorithm:
         tokenFactoryAlgorithm ??
         config.getOptionalString('auth.identityTokenAlgorithm'),
-      userInfoDatabaseHandler,
       omitClaimsFromToken,
     });
   }
@@ -126,7 +130,7 @@ export async function createRouter(
         cookie: { secure: enforceCookieSSL ? 'auto' : false },
         store: new KnexSessionStore({
           createtable: false,
-          knex: await authDb.get(),
+          knex: await database.get(),
         }),
       }),
     );
@@ -146,14 +150,25 @@ export async function createRouter(
     tokenIssuer,
     ...options,
     auth: options.auth,
+    userInfo,
   });
 
-  bindOidcRouter(router, {
+  const oidc = await OidcDatabase.create({ database });
+
+  const oidcRouter = OidcRouter.create({
     auth: options.auth,
     tokenIssuer,
     baseUrl: authUrl,
-    userInfoDatabaseHandler,
+    appUrl,
+    userInfo,
+    oidc,
+    logger,
+    httpAuth,
+    config,
+    offlineAccess: options.offlineAccess,
   });
+
+  router.use(oidcRouter.getRouter());
 
   // Gives a more helpful error message than a plain 404
   router.use('/:provider/', req => {

@@ -22,11 +22,10 @@ import DarkIcon from '@material-ui/icons/Brightness2';
 import LightIcon from '@material-ui/icons/WbSunny';
 import {
   createExtensionInput,
-  ThemeBlueprint,
   ApiBlueprint,
-  createApiFactory,
   appThemeApiRef,
 } from '@backstage/frontend-plugin-api';
+import { ThemeBlueprint } from '@backstage/plugin-app-react';
 // eslint-disable-next-line @backstage/no-relative-monorepo-imports
 import { AppThemeSelector } from '../../../../packages/core-app-api/src/apis/implementations';
 
@@ -38,17 +37,21 @@ export const AppThemeApi = ApiBlueprint.makeWithOverrides({
   inputs: {
     themes: createExtensionInput([ThemeBlueprint.dataRefs.theme], {
       replaces: [{ id: 'app', input: 'themes' }],
+      internal: true,
     }),
   },
   factory: (originalFactory, { inputs }) => {
-    return originalFactory({
-      factory: createApiFactory(
-        appThemeApiRef,
-        AppThemeSelector.createWithStorage(
-          inputs.themes.map(i => i.get(ThemeBlueprint.dataRefs.theme)),
-        ),
-      ),
-    });
+    return originalFactory(defineParams =>
+      defineParams({
+        api: appThemeApiRef,
+        deps: {},
+        factory: () => {
+          return AppThemeSelector.createWithStorage(
+            inputs.themes.map(i => i.get(ThemeBlueprint.dataRefs.theme)),
+          );
+        },
+      }),
+    );
   },
 });
 

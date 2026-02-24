@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-import {
-  SignInPageBlueprint,
-  createFrontendModule,
-} from '@backstage/frontend-plugin-api';
+import { createFrontendModule } from '@backstage/frontend-plugin-api';
+import { SignInPageBlueprint } from '@backstage/plugin-app-react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { createPublicSignInApp } from './createPublicSignInApp';
@@ -30,7 +28,9 @@ describe('createPublicSignInApp', () => {
 
   it('should render a sign-in page', async () => {
     const app = createPublicSignInApp({
-      configLoader: async () => ({ config: mockApis.config() }),
+      advanced: {
+        configLoader: async () => ({ config: mockApis.config() }),
+      },
       features: [
         createFrontendModule({
           pluginId: 'app',
@@ -58,7 +58,9 @@ describe('createPublicSignInApp', () => {
       .mockReturnValue();
 
     const app = createPublicSignInApp({
-      configLoader: async () => ({ config: mockApis.config() }),
+      advanced: {
+        configLoader: async () => ({ config: mockApis.config() }),
+      },
       features: [
         createFrontendModule({
           pluginId: 'app',
@@ -89,7 +91,11 @@ describe('createPublicSignInApp', () => {
     });
 
     expect(baseElement).toMatchInlineSnapshot(`
-      <body>
+      <body
+        data-theme-mode="light"
+        data-theme-name="backstage"
+        data-unified-theme-stack="[{"mode":"light","name":"backstage"}]"
+      >
         <div>
           <form
             action="http://localhost/"

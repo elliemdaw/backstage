@@ -14,12 +14,7 @@
  * limitations under the License.
  */
 
-import { FormFieldExtensionData } from '../blueprints';
-
-/**
- * @alpha
- * @deprecated This API is no longer necessary and will be removed
- */
-export interface ScaffolderFormFieldsApi {
-  getFormFields(): Promise<FormFieldExtensionData[]>;
+/** @alpha */
+export interface FormField {
+  readonly $$type: '@backstage/scaffolder/FormField';
 }

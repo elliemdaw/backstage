@@ -2,11 +2,8 @@
 id: index
 title: Utility APIs
 sidebar_label: Overview
-# prettier-ignore
 description: Working with Utility APIs in the New Frontend System
 ---
-
-> **NOTE: The new frontend system is in alpha and is only supported by a small number of plugins.**
 
 As described [in the architecture section](../architecture/33-utility-apis.md), utility APIs are pieces of shared functionality - interfaces that can be requested by plugins to use. They are defined by a TypeScript interface as well as a reference (an "API ref") used to access its implementation. They can be provided both by plugins and the core framework, and are themselves [extensions](../architecture/20-extensions.md) that can accept inputs, be declaratively configured in your app-config, or transparently be replaced entirely with custom implementations that fulfill the same contract.
 
@@ -37,6 +34,14 @@ These are described in detail in [the main article](./03-consuming.md)
 Most utility APIs are usable directly without any configuration. But they are proper extensions, and can therefore have their implementations entirely swapped out by your app for advanced use cases. They can also be built with the ability to configured in your app-config, or to have inputs that extend their functionality.
 
 These cases are all described in [the main article](./04-configuring.md).
+
+## Testing with utility APIs
+
+> For details, [see the main article](./05-testing.md).
+
+When testing frontend components and extensions, you often need to provide mock implementations of the utility APIs they depend on. The `@backstage/frontend-test-utils` package provides the `mockApis` namespace with ready-made mocks for all core utility APIs, which can be passed to test utilities like `renderInTestApp` and `TestApiProvider`.
+
+These are described in detail in [the main article](./05-testing.md).
 
 ## Migrating from the old frontend system
 

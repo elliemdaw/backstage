@@ -20,9 +20,14 @@ import {
   LoggerService,
 } from '@backstage/backend-plugin-api';
 import type { UserEntity } from '@backstage/catalog-model';
+import { Config } from '@backstage/config';
 import { ScmIntegrations } from '@backstage/integration';
 import { PermissionEvaluator } from '@backstage/plugin-permission-common';
-import { TaskSpec, TemplateInfo } from '@backstage/plugin-scaffolder-common';
+import {
+  ScaffolderTaskStatus,
+  TaskSpec,
+  TemplateInfo,
+} from '@backstage/plugin-scaffolder-common';
 import {
   createTemplateAction,
   deserializeDirectoryContents,
@@ -34,12 +39,12 @@ import {
 } from '@backstage/plugin-scaffolder-node';
 import { JsonObject } from '@backstage/types';
 import fs from 'fs-extra';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { v4 as uuid } from 'uuid';
-import { TemplateActionRegistry } from '../actions';
 import { NunjucksWorkflowRunner } from '../tasks/NunjucksWorkflowRunner';
 import { DecoratedActionsRegistry } from './DecoratedActionsRegistry';
+import { TemplateActionRegistry } from '../actions';
 
 interface DryRunInput {
   spec: TaskSpec;
@@ -54,7 +59,13 @@ interface DryRunInput {
 }
 
 interface DryRunResult {
-  log: Array<{ body: JsonObject }>;
+  log: Array<{
+    body: {
+      message: string;
+      stepId?: string;
+      status?: ScaffolderTaskStatus;
+    };
+  }>;
   directoryContents: SerializedFile[];
   output: JsonObject;
 }
@@ -69,6 +80,7 @@ export type TemplateTesterCreateOptions = {
   additionalTemplateFilters?: Record<string, TemplateFilter>;
   additionalTemplateGlobals?: Record<string, TemplateGlobal>;
   permissions?: PermissionEvaluator;
+  config?: Config;
 };
 
 /**
@@ -95,6 +107,7 @@ export function createDryRunner(options: TemplateTesterCreateOptions) {
           },
         }),
       ]),
+      config: options.config,
     });
 
     // Extracting contentsPath and dryRunId from the baseUrl
@@ -106,7 +119,13 @@ export function createDryRunner(options: TemplateTesterCreateOptions) {
     const contentsPath = path.dirname(basePath);
     const dryRunId = uuid();
 
-    const log = new Array<{ body: JsonObject }>();
+    const log = new Array<{
+      body: {
+        message: string;
+        stepId?: string;
+        status?: ScaffolderTaskStatus;
+      };
+    }>();
 
     try {
       await deserializeDirectoryContents(contentsPath, input.directoryContents);

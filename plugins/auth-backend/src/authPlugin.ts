@@ -26,6 +26,7 @@ import {
 } from '@backstage/plugin-auth-node';
 import { catalogServiceRef } from '@backstage/plugin-catalog-node';
 import { createRouter } from './service/router';
+import { OfflineAccessService } from './service/OfflineAccessService';
 
 /**
  * Auth plugin
@@ -66,6 +67,8 @@ export const authPlugin = createBackendPlugin({
         database: coreServices.database,
         discovery: coreServices.discovery,
         auth: coreServices.auth,
+        httpAuth: coreServices.httpAuth,
+        lifecycle: coreServices.lifecycle,
         catalog: catalogServiceRef,
       },
       async init({
@@ -75,8 +78,23 @@ export const authPlugin = createBackendPlugin({
         database,
         discovery,
         auth,
+        httpAuth,
+        lifecycle,
         catalog,
       }) {
+        const refreshTokensEnabled = config.getOptionalBoolean(
+          'auth.experimentalRefreshToken.enabled',
+        );
+
+        const offlineAccess = refreshTokensEnabled
+          ? await OfflineAccessService.create({
+              config,
+              database,
+              logger,
+              lifecycle,
+            })
+          : undefined;
+
         const router = await createRouter({
           logger,
           config,
@@ -86,6 +104,8 @@ export const authPlugin = createBackendPlugin({
           catalog,
           providerFactories: Object.fromEntries(providers),
           ownershipResolver,
+          httpAuth,
+          offlineAccess,
         });
         httpRouter.addAuthPolicy({
           path: '/',

@@ -53,7 +53,7 @@ describe('authModuleOktaProvider', () => {
     expect(res.status).toEqual(302);
 
     const nonceCookie = agent.jar.getCookie('okta-nonce', {
-      domain: 'localhost',
+      domain: '127.0.0.1',
       path: '/api/auth/okta/handler',
       script: false,
       secure: false,
@@ -75,5 +75,36 @@ describe('authModuleOktaProvider', () => {
       env: 'development',
       nonce: decodeURIComponent(nonceCookie.value),
     });
+  });
+
+  it('should reject a relative audience URL', async () => {
+    await expect(
+      startTestBackend({
+        features: [
+          import('@backstage/plugin-auth-backend'),
+          authModuleOktaProvider,
+          mockServices.rootConfig.factory({
+            data: {
+              app: {
+                baseUrl: 'http://localhost:3000',
+              },
+              auth: {
+                providers: {
+                  okta: {
+                    development: {
+                      clientId: 'my-client-id',
+                      clientSecret: 'my-client-secret',
+                      audience: 'example.okta.com',
+                    },
+                  },
+                },
+              },
+            },
+          }),
+        ],
+      }),
+    ).rejects.toThrow(
+      'The provided audience "example.okta.com" is not a valid URL. It must start with "https://" or "http://".',
+    );
   });
 });

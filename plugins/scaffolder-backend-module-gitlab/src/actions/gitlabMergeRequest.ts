@@ -28,60 +28,14 @@ import {
   RepositoryTreeSchema,
   SimpleUserSchema,
 } from '@gitbeaker/rest';
-import path from 'path';
+import path from 'node:path';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 import { InputError } from '@backstage/errors';
-import {
-  LoggerService,
-  resolveSafeChildPath,
-} from '@backstage/backend-plugin-api';
+import { resolveSafeChildPath } from '@backstage/backend-plugin-api';
 import { createGitlabApi, getErrorMessage } from './helpers';
 import { examples } from './gitlabMergeRequest.examples';
-import { createHash } from 'crypto';
 
-function computeSha256(file: SerializedFile): string {
-  const hash = createHash('sha256');
-  hash.update(file.content);
-  return hash.digest('hex');
-}
-
-async function getFileAction(
-  fileInfo: { file: SerializedFile; targetPath?: string },
-  target: { repoID: string; branch: string },
-  api: InstanceType<typeof Gitlab>,
-  logger: LoggerService,
-  remoteFiles: RepositoryTreeSchema[],
-  defaultCommitAction:
-    | 'create'
-    | 'delete'
-    | 'update'
-    | 'skip'
-    | 'auto' = 'auto',
-): Promise<'create' | 'delete' | 'update' | 'skip'> {
-  if (defaultCommitAction === 'auto') {
-    const filePath = path.join(fileInfo.targetPath ?? '', fileInfo.file.path);
-
-    if (remoteFiles?.some(remoteFile => remoteFile.path === filePath)) {
-      try {
-        const targetFile = await api.RepositoryFiles.show(
-          target.repoID,
-          filePath,
-          target.branch,
-        );
-        if (computeSha256(fileInfo.file) === targetFile.content_sha256) {
-          return 'skip';
-        }
-      } catch (error) {
-        logger.warn(
-          `Unable to retrieve detailed information for remote file ${filePath}`,
-        );
-      }
-      return 'update';
-    }
-    return 'create';
-  }
-  return defaultCommitAction;
-}
+import { getFileAction } from '../util';
 
 async function getReviewersFromApprovalRules(
   api: InstanceType<typeof Gitlab>,
@@ -157,7 +111,10 @@ Accepts the format \`gitlab.com?repo=project_name&owner=group_name\` where \
 \`project_name\` is the repository name and \`group_name\` is a group or username`),
         title: z => z.string().describe('The name for the merge request'),
         description: z =>
-          z.string().describe('The description of the merge request'),
+          z
+            .string()
+            .optional()
+            .describe('The description of the merge request'),
         branchName: z =>
           z.string().describe('The source branch name of the merge request'),
         targetBranchName: z =>

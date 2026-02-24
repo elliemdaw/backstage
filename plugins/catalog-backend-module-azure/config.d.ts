@@ -28,9 +28,9 @@ export interface Config {
       azureDevOps?: {
         [name: string]: {
           /**
-           * (Optional) The DevOps host; leave empty for `dev.azure.com`, otherwise set to your self-hosted instance host.
+           * (Optional) The DevOps host; defaults to `dev.azure.com` if left empty, otherwise set to your self-hosted instance host.
            */
-          host: string;
+          host?: string;
           /**
            * (Required) Your organization slug.
            */
@@ -45,6 +45,10 @@ export interface Config {
            */
           repository?: string;
           /**
+           * (Optional) The name of a branch to use. If not set, defaults to the default branch of the repository.
+           */
+          branch?: string;
+          /**
            * (Optional) Where to find catalog-info.yaml files. Wildcards are supported.
            * If not set, defaults to /catalog-info.yaml.
            */
@@ -55,6 +59,40 @@ export interface Config {
           schedule?: SchedulerServiceTaskScheduleDefinitionConfig;
         };
       };
+      /**
+       * AzureBlobEntityProvider configuration
+       */
+      azureBlob?:
+        | {
+            [name: string]: {
+              /**
+               * (Required) The Azure Blob Storage container name.
+               */
+              containerName: string;
+              /**
+               * (Required) The Azure Storage account name.
+               */
+              accountName: string;
+              /**
+               * (Optional) TaskScheduleDefinition for the refresh.
+               */
+              schedule?: SchedulerServiceTaskScheduleDefinitionConfig;
+            };
+          }
+        | {
+            /**
+             * (Required) The Azure Blob Storage container name.
+             */
+            containerName: string;
+            /**
+             * (Required) The Azure Storage account name.
+             */
+            accountName: string;
+            /**
+             * (Optional) TaskScheduleDefinition for the refresh.
+             */
+            schedule?: SchedulerServiceTaskScheduleDefinitionConfig;
+          };
     };
   };
 }

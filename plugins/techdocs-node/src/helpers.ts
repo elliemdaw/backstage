@@ -27,7 +27,7 @@ import {
 import { InputError } from '@backstage/errors';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 import { TECHDOCS_ANNOTATION } from '@backstage/plugin-techdocs-common';
-import path from 'path';
+import path from 'node:path';
 import { PreparerResponse, RemoteProtocol } from './stages/prepare/types';
 
 /**
@@ -52,7 +52,7 @@ export const parseReferenceAnnotation = (
   const annotation = entity.metadata.annotations?.[annotationName];
   if (!annotation) {
     throw new InputError(
-      `No location annotation provided in entity: ${entity.metadata.name}`,
+      `No ${annotationName} annotation provided in entity: ${entity.metadata.name}`,
     );
   }
 

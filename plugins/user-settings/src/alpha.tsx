@@ -20,11 +20,6 @@ import {
   PageBlueprint,
   NavItemBlueprint,
 } from '@backstage/frontend-plugin-api';
-import {
-  convertLegacyRouteRef,
-  convertLegacyRouteRefs,
-  compatWrapper,
-} from '@backstage/core-compat-api';
 import SettingsIcon from '@material-ui/icons/Settings';
 import { settingsRouteRef } from './plugin';
 
@@ -39,18 +34,16 @@ const userSettingsPage = PageBlueprint.makeWithOverrides({
   },
   factory(originalFactory, { inputs }) {
     return originalFactory({
-      defaultPath: '/settings',
-      routeRef: convertLegacyRouteRef(settingsRouteRef),
+      path: '/settings',
+      routeRef: settingsRouteRef,
       loader: () =>
-        import('./components/SettingsPage').then(m =>
-          compatWrapper(
-            <m.SettingsPage
-              providerSettings={inputs.providerSettings?.get(
-                coreExtensionData.reactElement,
-              )}
-            />,
-          ),
-        ),
+        import('./components/SettingsPage').then(m => (
+          <m.SettingsPage
+            providerSettings={inputs.providerSettings?.get(
+              coreExtensionData.reactElement,
+            )}
+          />
+        )),
     });
   },
 });
@@ -58,7 +51,7 @@ const userSettingsPage = PageBlueprint.makeWithOverrides({
 /** @alpha */
 export const settingsNavItem = NavItemBlueprint.make({
   params: {
-    routeRef: convertLegacyRouteRef(settingsRouteRef),
+    routeRef: settingsRouteRef,
     title: 'Settings',
     icon: SettingsIcon,
   },
@@ -69,9 +62,11 @@ export const settingsNavItem = NavItemBlueprint.make({
  */
 export default createFrontendPlugin({
   pluginId: 'user-settings',
+  title: 'Settings',
+  icon: <SettingsIcon />,
   info: { packageJson: () => import('../package.json') },
   extensions: [userSettingsPage, settingsNavItem],
-  routes: convertLegacyRouteRefs({
+  routes: {
     root: settingsRouteRef,
-  }),
+  },
 });

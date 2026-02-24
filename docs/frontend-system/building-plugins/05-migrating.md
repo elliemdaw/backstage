@@ -2,7 +2,6 @@
 id: migrating
 title: Migrating Plugins
 sidebar_label: Migration Guide
-# prettier-ignore
 description: How to migrate an existing frontend plugin to the new frontend system
 ---
 
@@ -39,7 +38,6 @@ In order to migrate the actual definition of the plugin you need to recreate the
 
 ```ts title="my-plugin/src/alpha.tsx"
   import { createFrontendPlugin } from '@backstage/frontend-plugin-api';
-  import { convertLegacyRouteRefs } from '@backstage/core-compat-api';
 
   export default createFrontendPlugin({
     // The plugin ID is now provided as `pluginId` instead of `id`
@@ -48,15 +46,12 @@ In order to migrate the actual definition of the plugin you need to recreate the
     // bind all the extensions to the plugin
     /* highlight-next-line */
     extensions: [/* APIs will go here, but don't worry about those yet */],
-    // convert old route refs to the new system
-    /* highlight-next-line */
-    routes: convertLegacyRouteRefs({
+    routes: {
       ...
-    }),
-    /* highlight-next-line */
-    externalRoutes: convertLegacyRouteRefs({
+    },
+    externalRoutes: {
       ...
-    }),
+    },
   });
 ```
 
@@ -111,25 +106,16 @@ it can be migrated as the following, keeping in mind that you may need to switch
 
 ```tsx
 import { PageBlueprint } from '@backstage/frontend-plugin-api';
-import {
-  compatWrapper,
-  convertLegacyRouteRef,
-} from '@backstage/core-compat-api';
 
 const fooPage = PageBlueprint.make({
   params: {
     // This is the path that was previously defined in the app code.
     // It's labelled as the default one because it can be changed via configuration.
-    defaultPath: '/foo',
-    // You can reuse the existing routeRef by wrapping it with convertLegacyRouteRef.
-    routeRef: convertLegacyRouteRef(rootRouteRef),
+    path: '/foo',
+    // You can reuse the existing routeRef.
+    routeRef: rootRouteRef,
     // these inputs usually match the props required by the component.
-    loader: () =>
-      import('./components/').then(m =>
-        // The compatWrapper utility allows you to keep using @backstage/core-plugin-api in the
-        // implementation of the component and switch to @backstage/frontend-plugin-api later.
-        compatWrapper(<m.FooPage />),
-      ),
+    loader: () => import('./components/').then(m => <m.FooPage />),
   },
 });
 ```
@@ -206,22 +192,17 @@ The major changes we'll make are
 The end result, after simplifying imports and cleaning up a bit, might look like this:
 
 ```tsx title="in @internal/plugin-example"
-import {
-  storageApiRef,
-  createApiFactory,
-  ApiBlueprint,
-} from '@backstage/frontend-plugin-api';
+import { storageApiRef, ApiBlueprint } from '@backstage/frontend-plugin-api';
 import { workApiRef } from '@internal/plugin-example-react';
 import { WorkImpl } from './WorkImpl';
 
 const exampleWorkApi = ApiBlueprint.make({
-  params: {
-    factory: createApiFactory({
+  params: defineParams =>
+    defineParams({
       api: workApiRef,
       deps: { storageApi: storageApiRef },
       factory: ({ storageApi }) => new WorkImpl({ storageApi }),
     }),
-  },
 });
 ```
 

@@ -17,9 +17,9 @@
 import chalk from 'chalk';
 import { OptionValues } from 'commander';
 import inquirer, { Answers } from 'inquirer';
-import { resolve as resolvePath } from 'path';
+import { resolve as resolvePath } from 'node:path';
 import { findPaths } from '@backstage/cli-common';
-import os from 'os';
+import os from 'node:os';
 import fs from 'fs-extra';
 import {
   Task,
@@ -65,9 +65,15 @@ export default async (opts: OptionValues): Promise<void> => {
     },
   ]);
 
+  // Pick the built-in template based on the --next flag
+  const builtInTemplate = opts.next
+    ? paths.resolveOwn('templates/next-app')
+    : paths.resolveOwn('templates/default-app');
+
+  // Use `--template-path` argument as template when specified. Otherwise, use the default template.
   const templateDir = opts.templatePath
     ? paths.resolveTarget(opts.templatePath)
-    : paths.resolveOwn('templates/default-app');
+    : builtInTemplate;
 
   // Use `--path` argument as application directory when specified, otherwise
   // create a directory using `answers.name`

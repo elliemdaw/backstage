@@ -132,6 +132,19 @@ export interface Config {
            */
           receiverEmails?: string[];
         };
+        /**
+         * Optional SES config for mail options. Allows for delegated sender
+         */
+        sesConfig?: {
+          /**
+           * ARN of the identity to use for the "From"/sender address of the email
+           */
+          fromArn?: string;
+          /**
+           * Name of the configuration set to use when sending email via ses
+           */
+          configurationSetName?: string;
+        };
         cache?: {
           /**
            * Email cache TTL, defaults to 1 hour
@@ -148,9 +161,14 @@ export interface Config {
            */
           maxSeverity?: NotificationSeverity;
           /**
-           * A notification who's topic is in this array will not be emailed
+           * A notification with topic is in this array will not be emailed
            */
           excludedTopics?: string[];
+          /**
+           * A notification with topic in this array will be emailed. If not defined, only
+           * excludedTopics takes effect.
+           */
+          includedTopics?: string[];
         };
         /**
          * White list of addresses to send email to

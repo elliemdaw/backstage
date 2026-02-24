@@ -15,9 +15,14 @@
  */
 
 import { OptionValues } from 'commander';
+import fs from 'fs-extra';
 import { buildPackage, Output } from '../../../lib/builder';
-import { findRoleFromCommand } from '../../../../../lib/role';
-import { PackageGraph, PackageRoles } from '@backstage/cli-node';
+import { findRoleFromCommand } from '../../../lib/role';
+import {
+  BackstagePackageJson,
+  PackageGraph,
+  PackageRoles,
+} from '@backstage/cli-node';
 import { paths } from '../../../../../lib/paths';
 import { buildFrontend } from '../../../lib/buildFrontend';
 import { buildBackend } from '../../../lib/buildBackend';
@@ -25,8 +30,8 @@ import { isValidUrl } from '../../../lib/urls';
 import chalk from 'chalk';
 
 export async function command(opts: OptionValues): Promise<void> {
-  const rspack = process.env.EXPERIMENTAL_RSPACK
-    ? (require('@rspack/core') as typeof import('@rspack/core').rspack)
+  const webpack = process.env.LEGACY_WEBPACK_BUILD
+    ? (require('webpack') as typeof import('webpack'))
     : undefined;
 
   const role = await findRoleFromCommand(opts);
@@ -44,7 +49,7 @@ export async function command(opts: OptionValues): Promise<void> {
         targetDir: paths.targetDir,
         configPaths,
         writeStats: Boolean(opts.stats),
-        rspack,
+        webpack,
       });
     }
     return buildBackend({
@@ -55,19 +60,27 @@ export async function command(opts: OptionValues): Promise<void> {
     });
   }
 
-  // experimental
+  let isModuleFederationRemote: boolean | undefined = undefined;
   if ((role as string) === 'frontend-dynamic-container') {
     console.log(
       chalk.yellow(
         `⚠️  WARNING: The 'frontend-dynamic-container' package role is experimental and will receive immediate breaking changes in the future.`,
       ),
     );
+    isModuleFederationRemote = true;
+  }
+  if (opts.moduleFederation) {
+    isModuleFederationRemote = true;
+  }
+
+  if (isModuleFederationRemote) {
+    console.log('Building package as a module federation remote');
     return buildFrontend({
       targetDir: paths.targetDir,
       configPaths: [],
       writeStats: Boolean(opts.stats),
-      isModuleFederationRemote: true,
-      rspack,
+      isModuleFederationRemote,
+      webpack,
     });
   }
 
@@ -85,8 +98,13 @@ export async function command(opts: OptionValues): Promise<void> {
     outputs.add(Output.types);
   }
 
+  const packageJson = (await fs.readJson(
+    paths.resolveTarget('package.json'),
+  )) as BackstagePackageJson;
+
   return buildPackage({
     outputs,
+    packageJson,
     minify: Boolean(opts.minify),
     workspacePackages: await PackageGraph.listTargetPackages(),
   });

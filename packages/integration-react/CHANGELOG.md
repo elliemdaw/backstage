@@ -1,5 +1,168 @@
 # @backstage/integration-react
 
+## 1.2.15
+
+### Patch Changes
+
+- a7e0d50: Updated `react-router-dom` peer dependency to `^6.30.2` and explicitly disabled v7 future flags to suppress deprecation warnings.
+- Updated dependencies
+  - @backstage/integration@1.20.0
+  - @backstage/core-plugin-api@1.12.3
+
+## 1.2.15-next.2
+
+### Patch Changes
+
+- a7e0d50: Prepare for React Router v7 migration by updating to v6.30.2 across all NFS packages and enabling v7 future flags. Convert routes from splat paths to parent/child structure with Outlet components.
+- Updated dependencies
+  - @backstage/integration@1.20.0-next.2
+  - @backstage/core-plugin-api@1.12.3-next.1
+
+## 1.2.15-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.20.0-next.1
+
+## 1.2.15-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.19.3-next.0
+  - @backstage/core-plugin-api@1.12.2-next.0
+  - @backstage/config@1.3.6
+
+## 1.2.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.19.2
+
+## 1.2.14-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.19.2-next.0
+
+## 1.2.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.19.0
+  - @backstage/core-plugin-api@1.12.1
+
+## 1.2.13-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.18.3-next.0
+  - @backstage/core-plugin-api@1.12.1-next.0
+  - @backstage/config@1.3.6
+
+## 1.2.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.18.2
+  - @backstage/core-plugin-api@1.12.0
+  - @backstage/config@1.3.6
+
+## 1.2.12-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-plugin-api@1.11.2-next.0
+  - @backstage/config@1.3.6-next.0
+  - @backstage/integration@1.18.2-next.0
+
+## 1.2.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.18.1
+  - @backstage/config@1.3.5
+  - @backstage/core-plugin-api@1.11.1
+
+## 1.2.11-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.4-next.0
+  - @backstage/integration@1.18.1-next.1
+  - @backstage/core-plugin-api@1.11.1-next.0
+
+## 1.2.11-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.18.1-next.0
+  - @backstage/config@1.3.3
+  - @backstage/core-plugin-api@1.11.0
+
+## 1.2.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-plugin-api@1.11.0
+  - @backstage/integration@1.18.0
+
+## 1.2.10-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/integration@1.18.0-next.0
+
+## 1.2.9
+
+### Patch Changes
+
+- 998fd15: Separated gitlab `write_repository` and `api` scope to pass checks in `RefreshingAuthSessionManager`
+- Updated dependencies
+  - @backstage/config@1.3.3
+  - @backstage/core-plugin-api@1.10.9
+  - @backstage/integration@1.17.1
+
+## 1.2.9-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.3-next.0
+  - @backstage/integration@1.17.1-next.1
+  - @backstage/core-plugin-api@1.10.9-next.0
+
+## 1.2.9-next.0
+
+### Patch Changes
+
+- 998fd15: Separated gitlab `write_repository` and `api` scope to pass checks in `RefreshingAuthSessionManager`
+- Updated dependencies
+  - @backstage/integration@1.17.1-next.0
+  - @backstage/config@1.3.2
+  - @backstage/core-plugin-api@1.10.8
+
+## 1.2.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-plugin-api@1.10.8
+  - @backstage/config@1.3.2
+  - @backstage/integration@1.17.0
+
 ## 1.2.7
 
 ### Patch Changes

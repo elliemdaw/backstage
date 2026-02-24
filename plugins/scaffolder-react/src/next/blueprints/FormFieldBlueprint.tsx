@@ -19,8 +19,9 @@ import {
 } from '@backstage/frontend-plugin-api';
 import { z } from 'zod';
 
-import { OpaqueFormField, FormField } from '@internal/scaffolder';
+import { OpaqueFormField } from '@internal/scaffolder';
 import { FormFieldExtensionData } from './types';
+import { FormField } from '../api';
 
 const formFieldExtensionDataRef = createExtensionDataRef<
   () => Promise<FormField>
@@ -34,10 +35,7 @@ const formFieldExtensionDataRef = createExtensionDataRef<
  * */
 export const FormFieldBlueprint = createExtensionBlueprint({
   kind: 'scaffolder-form-field',
-  attachTo: [
-    { id: 'page:scaffolder', input: 'formFields' },
-    { id: 'api:scaffolder/form-fields', input: 'formFields' },
-  ],
+  attachTo: { id: 'api:scaffolder/form-fields', input: 'formFields' },
   dataRefs: {
     formFieldLoader: formFieldExtensionDataRef,
   },
