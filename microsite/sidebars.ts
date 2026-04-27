@@ -86,6 +86,14 @@ export default {
     ...(process.env.GOLDEN_PATH
       ? [
           sidebarElementWithIndex({ label: 'Golden Paths' }, [
+            sidebarElementWithIndex({ label: '000 - Adoption' }, [
+              'golden-path/adoption/getting-started',
+              'golden-path/adoption/leadership-buy-in',
+              'golden-path/adoption/setting-up-a-poc',
+              'golden-path/adoption/first-stakeholder-feedback',
+              'golden-path/adoption/customizing-your-instance',
+              'golden-path/adoption/preparing-for-ga',
+            ]),
             sidebarElementWithIndex({ label: '001 - Create an App' }, [
               'golden-path/create-app/index',
               'golden-path/create-app/npx-create-app',
@@ -100,9 +108,32 @@ export default {
               'golden-path/plugins/why-build-plugins',
               'golden-path/plugins/sustainable-plugin-development',
               sidebarElementWithIndex({ label: 'Backend Plugins' }, [
-                'golden-path/plugins/backend/001-first-steps',
-                'golden-path/plugins/backend/002-poking-around',
+                'golden-path/plugins/backend/first-steps',
+                'golden-path/plugins/backend/poking-around',
+                'golden-path/plugins/backend/persistence',
+                'golden-path/plugins/backend/reading-from-source',
+                'golden-path/plugins/backend/testing',
               ]),
+              sidebarElementWithIndex({ label: 'Frontend Plugins' }, [
+                'golden-path/plugins/frontend/first-steps',
+                'golden-path/plugins/frontend/poking-around',
+                'golden-path/plugins/frontend/dynamic-config',
+                'golden-path/plugins/frontend/http-client',
+                'golden-path/plugins/frontend/testing',
+              ]),
+            ]),
+            sidebarElementWithIndex({ label: '003 - Deployment' }, [
+              'golden-path/deployment/index',
+            ]),
+            sidebarElementWithIndex({ label: '004 - Adoption' }, [
+              'golden-path/adoption/getting-started',
+              'golden-path/adoption/leadership-buy-in',
+              'golden-path/adoption/setting-up-a-poc',
+              'golden-path/adoption/first-stakeholder-feedback',
+              'golden-path/adoption/customize-your-instance',
+              'golden-path/adoption/preparing-for-ga',
+              'golden-path/adoption/plugin-ownership',
+              'golden-path/adoption/full-catalog',
             ]),
           ]),
         ]
@@ -119,7 +150,7 @@ export default {
             description:
               'Features in Backstage you can leverage with your AI tools.',
           },
-          ['ai/mcp-actions', 'ai/well-known-actions'],
+          ['ai/skills', 'ai/mcp-actions', 'ai/well-known-actions'],
         ),
         sidebarElementWithIndex(
           {
@@ -263,6 +294,7 @@ export default {
             'features/software-catalog/extending-the-model',
             'features/software-catalog/external-integrations',
             'features/software-catalog/catalog-customization',
+            'features/software-catalog/entity-presentation',
             'features/software-catalog/audit-events',
             {
               type: 'category',
@@ -302,8 +334,6 @@ export default {
             'features/software-templates/writing-custom-field-extensions',
             'features/software-templates/writing-custom-step-layouts',
             'features/software-templates/authorizing-scaffolder-template-details',
-            'features/software-templates/migrating-to-rjsf-v5',
-            'features/software-templates/migrating-from-v1beta2-to-v1beta3',
             'features/software-templates/dry-run-testing',
             'features/software-templates/experimental',
             'features/software-templates/templating-extensions',
@@ -412,60 +442,6 @@ export default {
     ),
     sidebarElementWithIndex(
       {
-        label: 'Plugins',
-        description: 'Extend Backstage with custom functionality.',
-      },
-      [
-        'plugins/index',
-        'plugins/create-a-plugin',
-        'plugins/plugin-development',
-        'plugins/structure-of-a-plugin',
-        'plugins/integrating-plugin-into-software-catalog',
-        'plugins/integrating-search-into-plugins',
-        'plugins/composability',
-        'plugins/internationalization',
-        'plugins/analytics',
-        'plugins/feature-flags',
-        sidebarElementWithIndex(
-          {
-            label: 'OpenAPI',
-            description:
-              'Work with OpenAPI specifications and generate clients.',
-          },
-          [
-            'openapi/01-getting-started',
-            'openapi/generate-client',
-            'openapi/test-case-validation',
-          ],
-        ),
-        sidebarElementWithIndex(
-          {
-            label: 'Backends and APIs',
-            description: 'Build and manage backend services and APIs.',
-          },
-          [
-            'plugins/proxying',
-            'plugins/backend-plugin',
-            'plugins/call-existing-api',
-          ],
-        ),
-        sidebarElementWithIndex(
-          { label: 'Testing', description: 'Testing plugins and modules.' },
-          ['plugins/testing'],
-        ),
-        sidebarElementWithIndex(
-          { label: 'Publishing', description: 'Publishing your plugins.' },
-          [
-            'plugins/publish-private',
-            'plugins/add-to-directory',
-            'plugins/plugin-directory-audit',
-          ],
-        ),
-        'plugins/observability',
-      ],
-    ),
-    sidebarElementWithIndex(
-      {
         label: 'Configuration',
         description: 'Manage static configuration files and settings.',
       },
@@ -560,15 +536,15 @@ export default {
         ),
         sidebarElementWithIndex(
           {
-            label: 'New Frontend System',
-            description: 'New frontend system components and architecture.',
+            label: 'Frontend System',
+            description: 'Frontend system components and architecture.',
           },
           [
             'frontend-system/index',
             sidebarElementWithIndex(
               {
                 label: 'Architecture',
-                description: 'Architecture of the new frontend system.',
+                description: 'Architecture of the frontend system.',
                 differentiator: 'frontend-system/',
               },
               [
@@ -597,6 +573,9 @@ export default {
                 'frontend-system/building-plugins/common-extension-blueprints',
                 'frontend-system/building-plugins/built-in-data-refs',
                 'frontend-system/building-plugins/migrating',
+                'frontend-system/building-plugins/internationalization',
+                'frontend-system/building-plugins/analytics',
+                'frontend-system/building-plugins/feature-flags',
               ],
             ),
             sidebarElementWithIndex(
@@ -606,6 +585,7 @@ export default {
               },
               [
                 'frontend-system/building-apps/index',
+                'frontend-system/building-apps/installing-plugins',
                 'frontend-system/building-apps/configuring-extensions',
                 'frontend-system/building-apps/built-in-extensions',
                 'frontend-system/building-apps/plugin-conversion',
@@ -665,6 +645,18 @@ export default {
             'conf/user-interface/sidebar',
           ],
         ),
+        sidebarElementWithIndex(
+          {
+            label: 'OpenAPI',
+            description:
+              'Work with OpenAPI specifications and generate clients.',
+          },
+          [
+            'openapi/01-getting-started',
+            'openapi/generate-client',
+            'openapi/test-case-validation',
+          ],
+        ),
       ],
     ),
     sidebarElementWithIndex(
@@ -687,11 +679,11 @@ export default {
             description: 'Technical tutorials and guides.',
           },
           [
-            'tutorials/quickstart-app-plugin',
             'tutorials/configuring-plugin-databases',
             'tutorials/manual-knex-rollback',
             'tutorials/switching-sqlite-postgres',
             'tutorials/using-backstage-proxy-within-plugin',
+            'tutorials/corporate-proxy',
             'tutorials/enable-public-entry',
             'tutorials/setup-opentelemetry',
             'tutorials/integrating-event-driven-updates-with-entity-providers',
@@ -719,6 +711,46 @@ export default {
       ],
     ),
     sidebarElementWithIndex(
+      {
+        label: 'Plugins (Legacy)',
+        description:
+          'Legacy plugin development documentation for the old frontend system. For new development, see the Frontend System and Backend System sections under Framework.',
+      },
+      [
+        'plugins/index',
+        'plugins/create-a-plugin',
+        'plugins/plugin-development',
+        'plugins/structure-of-a-plugin',
+        'plugins/integrating-plugin-into-software-catalog',
+        'plugins/integrating-search-into-plugins',
+        'plugins/composability',
+        'plugins/internationalization',
+        'plugins/analytics',
+        'plugins/feature-flags',
+        sidebarElementWithIndex(
+          {
+            label: 'Backends and APIs',
+            description: 'Build and manage backend services and APIs.',
+          },
+          [
+            'plugins/proxying',
+            'plugins/backend-plugin',
+            'plugins/call-existing-api',
+          ],
+        ),
+        sidebarElementWithIndex(
+          { label: 'Testing', description: 'Testing plugins and modules.' },
+          ['plugins/testing'],
+        ),
+        sidebarElementWithIndex(
+          { label: 'Publishing', description: 'Publishing your plugins.' },
+          ['plugins/add-to-directory', 'plugins/plugin-directory-audit'],
+        ),
+        'plugins/observability',
+        'plugins/new-backend-system',
+      ],
+    ),
+    sidebarElementWithIndex(
       { label: 'FAQ', description: 'Frequently asked questions and answers.' },
       ['faq/index', 'faq/product', 'faq/technical'],
     ),
@@ -731,6 +763,7 @@ export default {
         'contribute/index',
         'contribute/getting-involved',
         'contribute/project-structure',
+        'contribute/doc-style-guide',
       ],
     ),
     sidebarElementWithIndex(

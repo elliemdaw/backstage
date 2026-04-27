@@ -28,6 +28,7 @@ import {
   OpaqueExtensionDefinition,
   OpaqueExtensionInput,
 } from '@internal/frontend';
+import { FilterPredicate } from '@backstage/filter-predicates';
 
 /** @public */
 export type ExtensionAttachTo = { id: string; input: string };
@@ -74,6 +75,7 @@ export type InternalExtension<TConfig, TConfigInput> = Extension<
       }
     | {
         readonly version: 'v2';
+        readonly if?: FilterPredicate;
         readonly inputs: { [inputName in string]: ExtensionInput };
         readonly output: Array<ExtensionDataRef>;
         factory(options: {
@@ -180,6 +182,58 @@ function resolveAttachTo(
   }
 
   return resolveSpec(attachTo);
+}
+
+/**
+ * Resolves a list of extension definitions into extensions, returning both the
+ * resolved extensions and a map of extension definitions keyed by resolved ID.
+ * Throws if any two definitions resolve to the same ID.
+ *
+ * @internal
+ */
+export function resolveExtensionDefinitions(
+  definitions: Iterable<ExtensionDefinition>,
+  context: { namespace: string; featureType: string },
+): {
+  extensions: Extension<any>[];
+  extensionDefinitionsById: Map<
+    string,
+    typeof OpaqueExtensionDefinition.TInternal
+  >;
+} {
+  const extensions = new Array<Extension<any>>();
+  const extensionDefinitionsById = new Map<
+    string,
+    typeof OpaqueExtensionDefinition.TInternal
+  >();
+
+  for (const def of definitions) {
+    const internal = OpaqueExtensionDefinition.toInternal(def);
+    const ext = resolveExtensionDefinition(def, {
+      namespace: context.namespace,
+    });
+    extensions.push(ext);
+    extensionDefinitionsById.set(ext.id, {
+      ...internal,
+      namespace: context.namespace,
+    });
+  }
+
+  if (extensions.length !== extensionDefinitionsById.size) {
+    const extensionIds = extensions.map(e => e.id);
+    const duplicates = Array.from(
+      new Set(
+        extensionIds.filter((id, index) => extensionIds.indexOf(id) !== index),
+      ),
+    );
+    throw new Error(
+      `${context.featureType} '${
+        context.namespace
+      }' provided duplicate extensions: ${duplicates.join(', ')}`,
+    );
+  }
+
+  return { extensions, extensionDefinitionsById };
 }
 
 /** @internal */

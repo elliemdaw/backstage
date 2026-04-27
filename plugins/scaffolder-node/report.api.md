@@ -33,7 +33,7 @@ import { UpdateTaskCheckpointOptions } from '@backstage/plugin-scaffolder-node/a
 import { UrlReaderService } from '@backstage/backend-plugin-api';
 import { UserEntity } from '@backstage/catalog-model';
 import { Writable } from 'node:stream';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 
 // @public
 export type ActionContext<
@@ -406,6 +406,7 @@ export interface ScaffolderService {
       createdBy?: string;
       limit?: number;
       offset?: number;
+      status?: ScaffolderTaskStatus | ScaffolderTaskStatus[];
     },
     options: ScaffolderServiceRequestOptions,
   ): Promise<{
