@@ -143,9 +143,9 @@ const _default: OverridableFrontendPlugin<
         filter: FilterPredicate | undefined;
       };
       configInput: {
-        filter?: FilterPredicate | undefined;
         label?: string | undefined;
         title?: string | undefined;
+        filter?: FilterPredicate | undefined;
       };
       output:
         | ExtensionDataRef<
@@ -176,8 +176,12 @@ const _default: OverridableFrontendPlugin<
     'nav-item:scaffolder': OverridableExtensionDefinition<{
       kind: 'nav-item';
       name: undefined;
-      config: {};
-      configInput: {};
+      config: {
+        title: string | undefined;
+      };
+      configInput: {
+        title?: string | undefined;
+      };
       output: ExtensionDataRef<
         {
           title: string;
@@ -200,8 +204,8 @@ const _default: OverridableFrontendPlugin<
         title: string | undefined;
       };
       configInput: {
-        title?: string | undefined;
         path?: string | undefined;
+        title?: string | undefined;
       };
       output:
         | ExtensionDataRef<string, 'core.routing.path', {}>
@@ -432,6 +436,196 @@ const _default: OverridableFrontendPlugin<
         field: () => Promise<FormField>;
       };
     }>;
+    'sub-page:scaffolder/actions': OverridableExtensionDefinition<{
+      kind: 'sub-page';
+      name: 'actions';
+      config: {
+        path: string | undefined;
+        title: string | undefined;
+      };
+      configInput: {
+        path?: string | undefined;
+        title?: string | undefined;
+      };
+      output:
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
+            RouteRef_2<AnyRouteRefParams>,
+            'core.routing.ref',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<string, 'core.title', {}>
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
+          >;
+      inputs: {};
+      params: {
+        path: string;
+        title: string;
+        icon?: IconElement;
+        loader: () => Promise<JSX.Element>;
+        routeRef?: RouteRef_2;
+      };
+    }>;
+    'sub-page:scaffolder/editor': OverridableExtensionDefinition<{
+      kind: 'sub-page';
+      name: 'editor';
+      config: {
+        path: string | undefined;
+        title: string | undefined;
+      };
+      configInput: {
+        path?: string | undefined;
+        title?: string | undefined;
+      };
+      output:
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
+            RouteRef_2<AnyRouteRefParams>,
+            'core.routing.ref',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<string, 'core.title', {}>
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
+          >;
+      inputs: {};
+      params: {
+        path: string;
+        title: string;
+        icon?: IconElement;
+        loader: () => Promise<JSX.Element>;
+        routeRef?: RouteRef_2;
+      };
+    }>;
+    'sub-page:scaffolder/tasks': OverridableExtensionDefinition<{
+      kind: 'sub-page';
+      name: 'tasks';
+      config: {
+        path: string | undefined;
+        title: string | undefined;
+      };
+      configInput: {
+        path?: string | undefined;
+        title?: string | undefined;
+      };
+      output:
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
+            RouteRef_2<AnyRouteRefParams>,
+            'core.routing.ref',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<string, 'core.title', {}>
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
+          >;
+      inputs: {};
+      params: {
+        path: string;
+        title: string;
+        icon?: IconElement;
+        loader: () => Promise<JSX.Element>;
+        routeRef?: RouteRef_2;
+      };
+    }>;
+    'sub-page:scaffolder/templates': OverridableExtensionDefinition<{
+      config: {
+        path: string | undefined;
+        title: string | undefined;
+      };
+      configInput: {
+        path?: string | undefined;
+        title?: string | undefined;
+      };
+      output:
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
+            RouteRef_2<AnyRouteRefParams>,
+            'core.routing.ref',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<string, 'core.title', {}>
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
+          >;
+      inputs: {};
+      kind: 'sub-page';
+      name: 'templates';
+      params: {
+        path: string;
+        title: string;
+        icon?: IconElement;
+        loader: () => Promise<JSX.Element>;
+        routeRef?: RouteRef_2;
+      };
+    }>;
+    'sub-page:scaffolder/templating-extensions': OverridableExtensionDefinition<{
+      kind: 'sub-page';
+      name: 'templating-extensions';
+      config: {
+        path: string | undefined;
+        title: string | undefined;
+      };
+      configInput: {
+        path?: string | undefined;
+        title?: string | undefined;
+      };
+      output:
+        | ExtensionDataRef<string, 'core.routing.path', {}>
+        | ExtensionDataRef<
+            RouteRef_2<AnyRouteRefParams>,
+            'core.routing.ref',
+            {
+              optional: true;
+            }
+          >
+        | ExtensionDataRef<JSX_2.Element, 'core.reactElement', {}>
+        | ExtensionDataRef<string, 'core.title', {}>
+        | ExtensionDataRef<
+            IconElement,
+            'core.icon',
+            {
+              optional: true;
+            }
+          >;
+      inputs: {};
+      params: {
+        path: string;
+        title: string;
+        icon?: IconElement;
+        loader: () => Promise<JSX.Element>;
+        routeRef?: RouteRef_2;
+      };
+    }>;
   }
 >;
 export default _default;
@@ -479,7 +673,9 @@ export const formDecoratorsApi: OverridableExtensionDefinition<{
 }>;
 
 // @alpha (undocumented)
-export const formDecoratorsApiRef: ApiRef<ScaffolderFormDecoratorsApi>;
+export const formDecoratorsApiRef: ApiRef<ScaffolderFormDecoratorsApi> & {
+  readonly $$type: '@backstage/ApiRef';
+};
 
 export { formFieldsApiRef };
 
@@ -521,7 +717,7 @@ export type ScaffolderTemplateFormPreviewerClassKey =
   | 'textArea'
   | 'preview';
 
-// @alpha (undocumented)
+// @alpha @deprecated (undocumented)
 export const scaffolderTranslationRef: TranslationRef<
   'scaffolder',
   {
@@ -597,6 +793,7 @@ export const scaffolderTranslationRef: TranslationRef<
     readonly 'ongoingTask.contextMenu.cancel': 'Cancel';
     readonly 'ongoingTask.contextMenu.retry': 'Retry';
     readonly 'ongoingTask.contextMenu.startOver': 'Start Over';
+    readonly 'ongoingTask.contextMenu.moreOptions': 'More options';
     readonly 'ongoingTask.contextMenu.hideLogs': 'Hide Logs';
     readonly 'ongoingTask.contextMenu.showLogs': 'Show Logs';
     readonly 'ongoingTask.contextMenu.hideButtonBar': 'Hide Button Bar';
@@ -613,6 +810,7 @@ export const scaffolderTranslationRef: TranslationRef<
     readonly 'renderSchema.undefined': 'No schema defined';
     readonly 'renderSchema.tableCell.name': 'Name';
     readonly 'renderSchema.tableCell.type': 'Type';
+    readonly 'renderSchema.tableCell.value': 'Value';
     readonly 'renderSchema.tableCell.title': 'Title';
     readonly 'renderSchema.tableCell.description': 'Description';
     readonly 'templatingExtensions.content.values.title': 'Values';

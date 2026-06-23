@@ -21,6 +21,12 @@ import { useBgProvider, useBgConsumer, BgProvider } from '../useBg';
 import { resolveDefinitionProps, processUtilityProps } from './helpers';
 import { useAnalytics } from '../../analytics/useAnalytics';
 import { noopTracker } from '../../analytics/useAnalytics';
+import {
+  useResolvedPath,
+  useInRouterContext,
+  createPath,
+} from 'react-router-dom';
+import { isExternalLink } from '../../utils/linkUtils';
 import type {
   ComponentConfig,
   UseDefinitionOptions,
@@ -38,10 +44,20 @@ export function useDefinition<
 ): UseDefinitionResult<D, P> {
   const { breakpoint } = useBreakpoint();
 
+  let hrefResolvedProps = props;
+  const hasRouter = useInRouterContext();
+  if (hasRouter) {
+    const rawHref = (props as any).href;
+    const resolved = useResolvedPath(rawHref ?? '');
+    if (rawHref !== undefined && !isExternalLink(rawHref)) {
+      hrefResolvedProps = { ...props, href: createPath(resolved) } as P;
+    }
+  }
+
   // Resolve all props centrally — applies responsive values and defaults
   const { ownPropsResolved, restProps } = resolveDefinitionProps(
     definition,
-    props,
+    hrefResolvedProps,
     breakpoint,
   );
 
@@ -85,15 +101,16 @@ export function useDefinition<
   );
 
   // Analytics: conditionally call useAnalytics based on definition flag
-  // Safe: definition is a module-level constant, condition never changes at runtime
   let analytics = noopTracker;
   if (definition.analytics) {
     const tracker = useAnalytics();
     analytics = ownPropsResolved.noTrack ? noopTracker : tracker;
   }
 
-  const utilityTarget = options?.utilityTarget ?? 'root';
-  const classNameTarget = options?.classNameTarget ?? 'root';
+  const utilityTarget =
+    options?.utilityTarget !== undefined ? options.utilityTarget : 'root';
+  const classNameTarget =
+    options?.classNameTarget !== undefined ? options.classNameTarget : 'root';
 
   const classes: Record<string, string> = {};
 
