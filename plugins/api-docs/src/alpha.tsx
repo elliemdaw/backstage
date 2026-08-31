@@ -18,7 +18,6 @@ import Grid from '@material-ui/core/Grid';
 
 import {
   ApiBlueprint,
-  NavItemBlueprint,
   PageBlueprint,
   createFrontendPlugin,
 } from '@backstage/frontend-plugin-api';
@@ -33,19 +32,12 @@ import { defaultDefinitionWidgets } from './components/ApiDefinitionCard';
 import { rootRoute, registerComponentRouteRef } from './routes';
 import { apiDocsConfigRef } from './config';
 import { AppIcon } from '@backstage/core-components';
+import { z } from 'zod';
 
 import {
   EntityCardBlueprint,
   EntityContentBlueprint,
 } from '@backstage/plugin-catalog-react/alpha';
-
-const apiDocsNavItem = NavItemBlueprint.make({
-  params: {
-    title: 'APIs',
-    routeRef: rootRoute,
-    icon: () => <AppIcon fontSize="inherit" id="kind:api" />,
-  },
-});
 
 const apiDocsConfigApi = ApiBlueprint.make({
   name: 'config',
@@ -65,17 +57,16 @@ const apiDocsConfigApi = ApiBlueprint.make({
 });
 
 const apiDocsExplorerPage = PageBlueprint.makeWithOverrides({
-  config: {
-    schema: {
-      // Omitting columns and actions for now as their types are too complex to map to zod
-      initiallySelectedFilter: z =>
-        z.enum(['owned', 'starred', 'all']).optional(),
-    },
+  configSchema: {
+    // Omitting columns and actions for now as their types are too complex to map to zod
+    initiallySelectedFilter: z.enum(['owned', 'starred', 'all']).optional(),
   },
   factory(originalFactory, { config }) {
     return originalFactory({
       path: '/api-docs',
       routeRef: rootRoute,
+      title: 'APIs',
+      icon: <AppIcon fontSize="inherit" id="kind:api" />,
       loader: () =>
         import('./components/ApiExplorerPage/DefaultApiExplorerPage').then(
           m => (
@@ -222,7 +213,6 @@ export default createFrontendPlugin({
     registerApi: registerComponentRouteRef,
   },
   extensions: [
-    apiDocsNavItem,
     apiDocsConfigApi,
     apiDocsExplorerPage,
     apiDocsHasApisEntityCard,

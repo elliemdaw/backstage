@@ -1,5 +1,26 @@
 # @backstage/plugin-permission-common
 
+## 0.9.10
+
+### Patch Changes
+
+- b754e32: Migrated tests from MSW v1 to MSW v2.
+
+## 0.9.9
+
+### Patch Changes
+
+- e9b78e9: Removed the `uuid` dependency and replaced usage with the built-in `crypto.randomUUID()`.
+- Updated dependencies
+  - @backstage/errors@1.3.1
+  - @backstage/config@1.3.8
+
+## 0.9.9-next.1
+
+### Patch Changes
+
+- e9b78e9: Removed the `uuid` dependency and replaced usage with the built-in `crypto.randomUUID()`.
+
 ## 0.9.9-next.0
 
 ### Patch Changes

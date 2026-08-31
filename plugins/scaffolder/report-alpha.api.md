@@ -20,7 +20,6 @@ import { FormField } from '@backstage/plugin-scaffolder-react/alpha';
 import { formFieldsApiRef } from '@backstage/plugin-scaffolder-react/alpha';
 import type { FormProps as FormProps_2 } from '@rjsf/core';
 import { FormProps as FormProps_3 } from '@backstage/plugin-scaffolder-react';
-import { IconComponent } from '@backstage/frontend-plugin-api';
 import { IconElement } from '@backstage/frontend-plugin-api';
 import { IconLinkVerticalProps } from '@backstage/core-components';
 import { JSX as JSX_2 } from 'react';
@@ -33,6 +32,7 @@ import { RouteRef } from '@backstage/core-plugin-api';
 import { RouteRef as RouteRef_2 } from '@backstage/frontend-plugin-api';
 import { ScaffolderFormDecorator } from '@backstage/plugin-scaffolder-react/alpha';
 import { ScaffolderFormFieldsApi } from '@backstage/plugin-scaffolder-react/alpha';
+import { ScaffolderTemplateOutputsComponent } from '@backstage/plugin-scaffolder-react/alpha';
 import { SubRouteRef } from '@backstage/core-plugin-api';
 import { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import { TemplateGroupFilter } from '@backstage/plugin-scaffolder-react';
@@ -171,31 +171,6 @@ const _default: OverridableFrontendPlugin<
       params: {
         useProps: () => Omit<IconLinkVerticalProps, 'color'>;
         filter?: FilterPredicate | ((entity: Entity) => boolean);
-      };
-    }>;
-    'nav-item:scaffolder': OverridableExtensionDefinition<{
-      kind: 'nav-item';
-      name: undefined;
-      config: {
-        title: string | undefined;
-      };
-      configInput: {
-        title?: string | undefined;
-      };
-      output: ExtensionDataRef<
-        {
-          title: string;
-          icon: IconComponent;
-          routeRef: RouteRef_2<undefined>;
-        },
-        'core.nav-item.target',
-        {}
-      >;
-      inputs: {};
-      params: {
-        title: string;
-        icon: IconComponent;
-        routeRef: RouteRef_2<undefined>;
       };
     }>;
     'page:scaffolder': OverridableExtensionDefinition<{
@@ -513,8 +488,6 @@ const _default: OverridableFrontendPlugin<
       };
     }>;
     'sub-page:scaffolder/tasks': OverridableExtensionDefinition<{
-      kind: 'sub-page';
-      name: 'tasks';
       config: {
         path: string | undefined;
         title: string | undefined;
@@ -541,7 +514,27 @@ const _default: OverridableFrontendPlugin<
               optional: true;
             }
           >;
-      inputs: {};
+      inputs: {
+        templateOutputsComponents: ExtensionInput<
+          | ConfigurableExtensionDataRef<
+              ScaffolderTemplateOutputsComponent,
+              'scaffolder.template-outputs-component',
+              {}
+            >
+          | ConfigurableExtensionDataRef<
+              string[],
+              'scaffolder.template-output-template-refs',
+              {}
+            >,
+          {
+            singleton: false;
+            optional: true;
+            internal: false;
+          }
+        >;
+      };
+      kind: 'sub-page';
+      name: 'tasks';
       params: {
         path: string;
         title: string;
@@ -552,10 +545,24 @@ const _default: OverridableFrontendPlugin<
     }>;
     'sub-page:scaffolder/templates': OverridableExtensionDefinition<{
       config: {
+        enableBackstageUi: boolean;
+        groups:
+          | {
+              title: string;
+              filter: FilterPredicate;
+            }[]
+          | undefined;
         path: string | undefined;
         title: string | undefined;
       };
       configInput: {
+        enableBackstageUi?: boolean | undefined;
+        groups?:
+          | {
+              title: string;
+              filter: FilterPredicate;
+            }[]
+          | undefined;
         path?: string | undefined;
         title?: string | undefined;
       };
@@ -630,7 +637,7 @@ const _default: OverridableFrontendPlugin<
 >;
 export default _default;
 
-// @alpha (undocumented)
+// @public (undocumented)
 export class DefaultScaffolderFormDecoratorsApi
   implements ScaffolderFormDecoratorsApi
 {
@@ -642,7 +649,7 @@ export class DefaultScaffolderFormDecoratorsApi
   getFormDecorators(): Promise<ScaffolderFormDecorator[]>;
 }
 
-// @alpha (undocumented)
+// @public (undocumented)
 export const formDecoratorsApi: OverridableExtensionDefinition<{
   config: {};
   configInput: {};
@@ -672,7 +679,7 @@ export const formDecoratorsApi: OverridableExtensionDefinition<{
   ) => ExtensionBlueprintParams<AnyApiFactory>;
 }>;
 
-// @alpha (undocumented)
+// @public (undocumented)
 export const formDecoratorsApiRef: ApiRef<ScaffolderFormDecoratorsApi> & {
   readonly $$type: '@backstage/ApiRef';
 };
@@ -692,7 +699,7 @@ export type ScaffolderCustomFieldExplorerClassKey =
   | 'fieldForm'
   | 'preview';
 
-// @alpha (undocumented)
+// @public (undocumented)
 export interface ScaffolderFormDecoratorsApi {
   // (undocumented)
   getFormDecorators(): Promise<ScaffolderFormDecorator[]>;

@@ -8,6 +8,7 @@ import { CatalogService } from '@backstage/plugin-catalog-node';
 import { Config } from '@backstage/config';
 import { createPullRequest } from 'octokit-plugin-create-pull-request';
 import { GithubCredentialsProvider } from '@backstage/integration';
+import { LoggerService } from '@backstage/backend-plugin-api';
 import { Octokit } from 'octokit';
 import { OctokitOptions } from '@octokit/core/dist-types/types';
 import { ScmIntegrationRegistry } from '@backstage/integration';
@@ -18,6 +19,7 @@ import { TemplateAction } from '@backstage/plugin-scaffolder-node';
 export function createGithubActionsDispatchAction(options: {
   integrations: ScmIntegrations;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -39,6 +41,7 @@ export function createGithubActionsDispatchAction(options: {
 export function createGithubAutolinksAction(options: {
   integrations: ScmIntegrations;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -56,6 +59,7 @@ export function createGithubAutolinksAction(options: {
 // @public
 export function createGithubBranchProtectionAction(options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -96,6 +100,7 @@ export function createGithubBranchProtectionAction(options: {
 // @public
 export function createGithubDeployKeyAction(options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -115,6 +120,7 @@ export function createGithubDeployKeyAction(options: {
 export function createGithubEnvironmentAction(options: {
   integrations: ScmIntegrationRegistry;
   catalog: CatalogService;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -144,6 +150,7 @@ export function createGithubEnvironmentAction(options: {
 export function createGithubIssuesCreateAction(options: {
   integrations: ScmIntegrationRegistry;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -165,6 +172,7 @@ export function createGithubIssuesCreateAction(options: {
 export function createGithubIssuesLabelAction(options: {
   integrations: ScmIntegrationRegistry;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -182,6 +190,7 @@ export function createGithubIssuesLabelAction(options: {
 export function createGithubPagesEnableAction(options: {
   integrations: ScmIntegrationRegistry;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -221,12 +230,14 @@ export interface CreateGithubPullRequestActionOptions {
   config?: Config;
   githubCredentialsProvider?: GithubCredentialsProvider;
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }
 
 // @public
 export function createGithubRepoCreateAction(options: {
   integrations: ScmIntegrationRegistry;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -320,6 +331,7 @@ export function createGithubRepoPushAction(options: {
   integrations: ScmIntegrationRegistry;
   config: Config;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -368,6 +380,7 @@ export function createGithubWebhookAction(options: {
   integrations: ScmIntegrationRegistry;
   defaultWebhookSecret?: string;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -390,6 +403,7 @@ export function createPublishGithubAction(options: {
   integrations: ScmIntegrationRegistry;
   config: Config;
   githubCredentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
 }): TemplateAction<
   {
     repoUrl: string;
@@ -510,9 +524,17 @@ export const createPublishGithubPullRequestAction: (
 >;
 
 // @public
+export function getOctokitClient(
+  octokitOptions: OctokitOptions,
+  logger: LoggerService,
+  retryOptions?: RetryOptions,
+): Octokit;
+
+// @public
 export function getOctokitOptions(options: {
   integrations: ScmIntegrationRegistry;
   credentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
   token?: string;
   host: string;
   owner?: string;
@@ -523,6 +545,7 @@ export function getOctokitOptions(options: {
 export function getOctokitOptions(options: {
   integrations: ScmIntegrationRegistry;
   credentialsProvider?: GithubCredentialsProvider;
+  requireScmUserCredentials?: boolean;
   token?: string;
   repoUrl: string;
 }): Promise<OctokitOptions>;
@@ -530,4 +553,10 @@ export function getOctokitOptions(options: {
 // @public
 const githubModule: BackendFeature;
 export default githubModule;
+
+// @public
+export type RetryOptions = {
+  retries?: number;
+  retryAfter?: number;
+};
 ```

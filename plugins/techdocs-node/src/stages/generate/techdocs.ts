@@ -15,6 +15,7 @@
  */
 
 import { Config } from '@backstage/config';
+import fs from 'fs-extra';
 import path from 'node:path';
 import {
   ScmIntegrationRegistry,
@@ -26,12 +27,13 @@ import {
   patchIndexPreBuild,
   runCommand,
   storeEtagMetadata,
-  validateDocsDirectory,
+  validateInputDirectory,
   validateMkdocsYaml,
 } from './helpers';
 
 import {
   patchMkdocsYmlPreBuild,
+  patchMkdocsYmlWithFontDisabled,
   patchMkdocsYmlWithPlugins,
   sanitizeMkdocsYml,
 } from './mkdocsPatchers';
@@ -111,6 +113,20 @@ export class TechdocsGenerator implements GeneratorBase {
       siteOptions,
     );
 
+    // Warn if both config files exist — MkDocs and Backstage resolve them in
+    // different order, so a second file would be silently ignored by one side.
+    const alternateConfigName =
+      path.basename(mkdocsYmlPath) === 'mkdocs.yaml'
+        ? 'mkdocs.yml'
+        : 'mkdocs.yaml';
+    if (await fs.pathExists(path.join(inputDir, alternateConfigName))) {
+      childLogger.warn(
+        `Both mkdocs.yml and mkdocs.yaml found in ${inputDir}; using ${path.basename(
+          mkdocsYmlPath,
+        )}. The other file will be ignored.`,
+      );
+    }
+
     // validate the docs_dir first
     const docsDir = await validateMkdocsYaml(inputDir, content);
 
@@ -120,11 +136,6 @@ export class TechdocsGenerator implements GeneratorBase {
       childLogger,
       this.options.dangerouslyAllowAdditionalKeys,
     );
-
-    // Validate that no symlinks in the docs directory point outside the input directory
-    // This prevents path traversal attacks where malicious symlinks could leak host files
-    const resolvedDocsDir = path.join(inputDir, docsDir ?? 'docs');
-    await validateDocsDirectory(resolvedDocsDir, inputDir);
 
     if (parsedLocationAnnotation) {
       await patchMkdocsYmlPreBuild(
@@ -139,6 +150,10 @@ export class TechdocsGenerator implements GeneratorBase {
       await patchIndexPreBuild({ inputDir, logger: childLogger, docsDir });
     }
 
+    // Validate that no symlinks in the input directory point outside it. MkDocs
+    // extensions can access files throughout the input directory, not just docs_dir.
+    await validateInputDirectory(inputDir);
+
     // patch the list of mkdocs plugins
     const defaultPlugins = this.options.defaultPlugins ?? [];
 
@@ -150,6 +165,9 @@ export class TechdocsGenerator implements GeneratorBase {
     }
 
     await patchMkdocsYmlWithPlugins(mkdocsYmlPath, childLogger, defaultPlugins);
+    if (this.options.disableExternalFonts) {
+      await patchMkdocsYmlWithFontDisabled(mkdocsYmlPath, childLogger);
+    }
 
     // Directories to bind on container
     const mountDirs = {
@@ -162,7 +180,7 @@ export class TechdocsGenerator implements GeneratorBase {
         case 'local':
           await runCommand({
             command: 'mkdocs',
-            args: ['build', '-d', outputDir, '-v'],
+            args: ['build', '-f', mkdocsYmlPath, '-d', outputDir, '-v'],
             options: {
               cwd: inputDir,
             },
@@ -178,7 +196,13 @@ export class TechdocsGenerator implements GeneratorBase {
           await containerRunner.runContainer({
             imageName:
               this.options.dockerImage ?? TechdocsGenerator.defaultDockerImage,
-            args: ['build', '-d', '/output'],
+            args: [
+              'build',
+              '-f',
+              `/input/${path.basename(mkdocsYmlPath)}`,
+              '-d',
+              '/output',
+            ],
             logStream,
             mountDirs,
             workingDir: '/input',
@@ -263,6 +287,9 @@ export function readGeneratorConfig(
     ),
     dangerouslyAllowAdditionalKeys: config.getOptionalStringArray(
       'techdocs.generator.mkdocs.dangerouslyAllowAdditionalKeys',
+    ),
+    disableExternalFonts: config.getOptionalBoolean(
+      'techdocs.generator.mkdocs.disableExternalFonts',
     ),
   };
 }

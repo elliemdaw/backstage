@@ -23,7 +23,7 @@ describe('parseEntityQuery', () => {
     it('returns empty result for empty request', () => {
       const result = parseEntityQuery({});
       expect(result).toEqual({
-        query: undefined,
+        filter: undefined,
         orderFields: undefined,
         fullTextFilter: undefined,
         fields: undefined,
@@ -36,7 +36,7 @@ describe('parseEntityQuery', () => {
       const query = { kind: 'component' };
       const result = parseEntityQuery({ query });
       expect(result).toEqual(
-        expect.objectContaining({ query: { kind: 'component' } }),
+        expect.objectContaining({ filter: { kind: 'component' } }),
       );
     });
 
@@ -49,19 +49,19 @@ describe('parseEntityQuery', () => {
         ],
       };
       const result = parseEntityQuery({ query });
-      expect(result).toEqual(expect.objectContaining({ query }));
+      expect(result).toEqual(expect.objectContaining({ filter: query }));
     });
 
     it('parses query with $exists operator', () => {
       const query = { 'metadata.labels.team': { $exists: true } };
       const result = parseEntityQuery({ query });
-      expect(result).toEqual(expect.objectContaining({ query }));
+      expect(result).toEqual(expect.objectContaining({ filter: query }));
     });
 
     it('parses query with $in operator', () => {
       const query = { kind: { $in: ['component', 'api'] } };
       const result = parseEntityQuery({ query });
-      expect(result).toEqual(expect.objectContaining({ query }));
+      expect(result).toEqual(expect.objectContaining({ filter: query }));
     });
 
     it('passes through limit', () => {
@@ -151,6 +151,27 @@ describe('parseEntityQuery', () => {
           orderBy: [{ field: 'metadata.name', order: 'sideways' }],
         }),
       ).toThrow(/Invalid order field order/);
+    });
+
+    it('parses totalItems include / exclude', () => {
+      expect(parseEntityQuery({ totalItems: 'exclude' })).toEqual(
+        expect.objectContaining({ totalItems: 'exclude' }),
+      );
+      expect(parseEntityQuery({ totalItems: 'include' })).toEqual(
+        expect.objectContaining({ totalItems: 'include' }),
+      );
+    });
+
+    it('omits totalItems when not provided', () => {
+      const result = parseEntityQuery({});
+      expect(result).not.toHaveProperty('totalItems');
+    });
+
+    it('throws on invalid totalItems value', () => {
+      expect(() =>
+        // @ts-expect-error - invalid enum value
+        parseEntityQuery({ totalItems: 'maybe' }),
+      ).toThrow(/Invalid totalItems value/);
     });
   });
 

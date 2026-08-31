@@ -20,18 +20,27 @@ import {
   discoveryApiRef,
   fetchApiRef,
   identityApiRef,
-  NavItemBlueprint,
   PageBlueprint,
   SubPageBlueprint,
 } from '@backstage/frontend-plugin-api';
+import { z } from 'zod/v4';
+import {
+  createZodV4FilterPredicateSchema,
+  filterPredicateToFilterFunction,
+} from '@backstage/filter-predicates';
 import { rootRouteRef } from '../routes';
 import CreateComponentIcon from '@material-ui/icons/AddCircleOutline';
 import {
   FormFieldBlueprint,
   formFieldsApiRef,
+  scaffolderTemplateOutputsComponentRef,
+  scaffolderTemplateOutputTemplateRefsRef,
 } from '@backstage/plugin-scaffolder-react/alpha';
 import { scmIntegrationsApiRef } from '@backstage/integration-react';
-import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
+import {
+  scaffolderApiRef,
+  TemplateGroupFilter,
+} from '@backstage/plugin-scaffolder-react';
 import { ScaffolderClient } from '../api';
 
 export const scaffolderPage = PageBlueprint.makeWithOverrides({
@@ -45,14 +54,33 @@ export const scaffolderPage = PageBlueprint.makeWithOverrides({
       routeRef: rootRouteRef,
       path: '/create',
       title: 'Create',
+      icon: <CreateComponentIcon fontSize="inherit" />,
     });
   },
 });
 
 export const scaffolderTemplatesSubPage = SubPageBlueprint.makeWithOverrides({
   name: 'templates',
-  factory(originalFactory, { apis }) {
+  configSchema: {
+    enableBackstageUi: z.boolean().optional().default(false),
+    groups: z
+      .array(
+        z.object({
+          title: z.string(),
+          filter: createZodV4FilterPredicateSchema(),
+        }),
+      )
+      .optional(),
+  },
+  factory(originalFactory, { apis, config }) {
     const formFieldsApi = apis.get(formFieldsApiRef);
+
+    const groups: TemplateGroupFilter[] | undefined = config.groups?.map(
+      group => ({
+        title: group.title,
+        filter: filterPredicateToFilterFunction(group.filter),
+      }),
+    );
 
     return originalFactory({
       path: 'templates',
@@ -61,20 +89,48 @@ export const scaffolderTemplatesSubPage = SubPageBlueprint.makeWithOverrides({
         const formFields = (await formFieldsApi?.loadFormFields()) ?? [];
 
         return import('./components/TemplatesSubPage').then(m => (
-          <m.TemplatesSubPage formFields={formFields} />
+          <m.TemplatesSubPage
+            formFields={formFields}
+            groups={groups}
+            formProps={{
+              EXPERIMENTAL_theme: config.enableBackstageUi ? 'bui' : 'mui',
+            }}
+          />
         ));
       },
     });
   },
 });
 
-export const scaffolderTasksSubPage = SubPageBlueprint.make({
+export const scaffolderTasksSubPage = SubPageBlueprint.makeWithOverrides({
   name: 'tasks',
-  params: {
-    path: 'tasks',
-    title: 'Tasks',
-    loader: () =>
-      import('./components/TasksSubPage').then(m => <m.TasksSubPage />),
+  inputs: {
+    templateOutputsComponents: createExtensionInput(
+      [
+        scaffolderTemplateOutputsComponentRef,
+        scaffolderTemplateOutputTemplateRefsRef,
+      ],
+      { optional: true },
+    ),
+  },
+  factory(originalFactory, { inputs }) {
+    return originalFactory({
+      path: 'tasks',
+      title: 'Tasks',
+      loader: async () => {
+        const templateOutputsComponents = inputs.templateOutputsComponents?.map(
+          input => ({
+            component: input.get(scaffolderTemplateOutputsComponentRef),
+            templateRefs: input.get(scaffolderTemplateOutputTemplateRefsRef),
+          }),
+        );
+        return import('./components/TasksSubPage').then(m => (
+          <m.TasksSubPage
+            templateOutputsComponents={templateOutputsComponents}
+          />
+        ));
+      },
+    });
   },
 });
 
@@ -119,14 +175,6 @@ export const scaffolderTemplatingExtensionsSubPage = SubPageBlueprint.make({
           <m.TemplatingExtensionsPageContent linkLocal />
         </Content>
       )),
-  },
-});
-
-export const scaffolderNavItem = NavItemBlueprint.make({
-  params: {
-    routeRef: rootRouteRef,
-    title: 'Create...',
-    icon: CreateComponentIcon,
   },
 });
 

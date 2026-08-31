@@ -21,7 +21,6 @@ import {
   createFrontendPlugin,
   ApiBlueprint,
   PageBlueprint,
-  NavItemBlueprint,
   PluginHeaderActionBlueprint,
   createExtensionInput,
   coreExtensionData,
@@ -36,7 +35,10 @@ import {
   EntityContentBlueprint,
   EntityIconLinkBlueprint,
 } from '@backstage/plugin-catalog-react/alpha';
-import { SearchResultListItemBlueprint } from '@backstage/plugin-search-react/alpha';
+import {
+  SearchFilterResultTypeBlueprint,
+  SearchResultListItemBlueprint,
+} from '@backstage/plugin-search-react/alpha';
 import {
   AddonBlueprint,
   attachTechDocsAddonComponentData,
@@ -130,19 +132,35 @@ export const techDocsSearchResultListItemExtension =
     },
   });
 
+const techDocsSearchFilterResultTypeExtension =
+  SearchFilterResultTypeBlueprint.make({
+    params: {
+      value: 'techdocs',
+      name: 'Documentation',
+      icon: <DocsIcon />,
+    },
+  });
+
 /**
  * Responsible for rendering the provided router element
  *
  * @alpha
  */
-const techDocsPage = PageBlueprint.make({
-  params: {
-    path: '/docs',
-    routeRef: rootRouteRef,
-    loader: () =>
-      import('./components/TechDocsIndexPageContent').then(m => (
-        <m.TechDocsIndexPageContent />
-      )),
+const techDocsPage = PageBlueprint.makeWithOverrides({
+  configSchema: {
+    initialFilter: z.enum(['all', 'owned', 'starred']).default('owned'),
+  },
+  factory(originalFactory, { config }) {
+    return originalFactory({
+      path: '/docs',
+      routeRef: rootRouteRef,
+      title: 'Docs',
+      icon: <RiArticleLine />,
+      loader: () =>
+        import('./components/TechDocsIndexPageContent').then(m => (
+          <m.TechDocsIndexPageContent initialFilter={config.initialFilter} />
+        )),
+    });
   },
 });
 
@@ -265,15 +283,6 @@ const techDocsEntityContentEmptyState = createExtension({
   factory: () => [],
 });
 
-/** @alpha */
-const techDocsNavItem = NavItemBlueprint.make({
-  params: {
-    icon: () => <RiArticleLine />,
-    title: 'Docs',
-    routeRef: rootRouteRef,
-  },
-});
-
 const techDocsSupportAction = PluginHeaderActionBlueprint.make({
   params: defineParams =>
     defineParams({
@@ -293,13 +302,13 @@ export default createFrontendPlugin({
     techDocsClientApi,
     techDocsStorageApi,
     TechDocsAddonsApiExtension,
-    techDocsNavItem,
     techDocsSupportAction,
     techDocsPage,
     techDocsReaderPage,
     techdocsEntityIconLink,
     techDocsEntityContent,
     techDocsEntityContentEmptyState,
+    techDocsSearchFilterResultTypeExtension,
     techDocsSearchResultListItemExtension,
   ],
   routes: {
@@ -308,3 +317,6 @@ export default createFrontendPlugin({
     entityContent: rootCatalogDocsRouteRef,
   },
 });
+
+/** @alpha */
+export { techdocsTranslationRef } from '../translation';

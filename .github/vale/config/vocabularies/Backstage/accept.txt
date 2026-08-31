@@ -1,4 +1,5 @@
 abc
+accessor
 accessors
 ACLs
 addon
@@ -11,7 +12,9 @@ ajv
 Alaria
 Alef
 allowedHosts
+allowlist
 allowlisted
+allowlists
 Anddddd
 Apdex
 api
@@ -27,6 +30,7 @@ autoscaling
 autoselect
 Avro
 backend's
+backoff
 backported
 backporting
 BEPs
@@ -75,6 +79,7 @@ codemod
 codemods
 codeowners
 codescene
+Combobox
 composability
 composable
 config
@@ -102,6 +107,7 @@ dayjs
 debounce
 debounced
 debounces
+debouncing
 debuggability
 declaratively
 deduplicate
@@ -151,6 +157,7 @@ etag
 Expedia
 facto
 failover
+falsy
 faq
 Fargate
 faqs
@@ -256,6 +263,7 @@ LocalStack
 lockdown
 lockfile
 lockfiles
+loopback
 lookbehind
 lookup
 lookups
@@ -309,6 +317,7 @@ neuro
 newrelic
 nginx
 nodegit
+nodemailer
 nodejs
 nohoist
 nonces
@@ -316,6 +325,7 @@ noop
 npm
 nullable
 nunjucks
+nunjitsu
 nvarchar
 nvm
 OAuth
@@ -327,6 +337,7 @@ Oldsberg
 onboarded
 onboarding
 onelogin
+oasdiff
 openapi
 OpenSearch
 OpenShift
@@ -345,6 +356,7 @@ params
 parseable
 passthrough
 passwordless
+patcher
 Patrik
 pattison
 Peloton
@@ -387,6 +399,7 @@ readonly
 rebase
 rebasing
 Recharts
+recurse
 redactions
 Redash
 redis
@@ -484,6 +497,7 @@ subpath
 subpaths
 subroute
 subroutes
+subquery
 substring
 subtree
 superfences
@@ -535,6 +549,7 @@ TTLs
 Turbopack
 TSDoc
 typeahead
+typoed
 ui
 unassign
 unbreak
@@ -552,9 +567,11 @@ unreviewed
 unstarred
 untemplated
 untracked
+untrusted
 upsert
 upstreams
 upvote
+UIs
 URIs
 url
 URLs

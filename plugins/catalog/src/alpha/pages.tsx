@@ -15,9 +15,13 @@
  */
 
 import { convertLegacyRouteRef } from '@backstage/core-compat-api';
+import { stringifyEntityRef } from '@backstage/catalog-model';
+import { useRouteRefParams } from '@backstage/core-plugin-api';
 import {
   coreExtensionData,
   createExtensionInput,
+  createExtensionDataRef,
+  createExtensionBlueprint,
   PageBlueprint,
 } from '@backstage/frontend-plugin-api';
 import { z } from 'zod/v4';
@@ -30,16 +34,46 @@ import {
   EntityContentBlueprint,
   EntityContextMenuItemBlueprint,
   EntityHeaderBlueprint,
+  EntityHeaderLayoutBlueprint,
   EntityContentGroupDefinitions,
 } from '@backstage/plugin-catalog-react/alpha';
 import CategoryIcon from '@material-ui/icons/Category';
 import { rootRouteRef } from '../routes';
 import { useEntityFromUrl } from '../components/CatalogEntityPage/useEntityFromUrl';
 import { buildFilterFn } from './filter/FilterWrapper';
+import type { CatalogExportSettings } from '../components/CatalogExportButton';
+
+const catalogExportConfigDataRef = createExtensionDataRef<{
+  exporters?: CatalogExportSettings['exporters'];
+  columns?: CatalogExportSettings['columns'];
+  onSuccess?: CatalogExportSettings['onSuccess'];
+  onError?: CatalogExportSettings['onError'];
+}>().with({
+  id: 'catalog.export-customization',
+});
+
+/**
+ * Blueprint for creating catalog export configuration extensions.
+ * @public
+ */
+export const CatalogExportConfigBlueprint = createExtensionBlueprint({
+  kind: 'catalog-export-config',
+  attachTo: { id: 'page:catalog', input: 'exportConfig' },
+  output: [catalogExportConfigDataRef],
+  factory(params: {
+    exporters?: CatalogExportSettings['exporters'];
+    columns?: CatalogExportSettings['columns'];
+    onSuccess?: CatalogExportSettings['onSuccess'];
+    onError?: CatalogExportSettings['onError'];
+  }) {
+    return [catalogExportConfigDataRef(params)];
+  },
+});
 
 export const catalogPage = PageBlueprint.makeWithOverrides({
   inputs: {
     filters: createExtensionInput([coreExtensionData.reactElement]),
+    exportConfig: createExtensionInput([catalogExportConfigDataRef.optional()]),
   },
   configSchema: {
     pagination: z
@@ -52,6 +86,17 @@ export const catalogPage = PageBlueprint.makeWithOverrides({
         }),
       ])
       .default(true),
+    exportSettings: z
+      .object({
+        /** When true, displays the export button in the catalog interface. */
+        enabled: z.boolean().optional(),
+        /**
+         * When true, hides the built-in CSV and JSON export options.
+         * Useful when only custom exporters (provided via extensions) should be available.
+         */
+        disableBuiltinExporters: z.boolean().optional(),
+      })
+      .optional(),
   },
   factory(originalFactory, { inputs, config }) {
     return originalFactory({
@@ -66,10 +111,40 @@ export const catalogPage = PageBlueprint.makeWithOverrides({
         const filters = inputs.filters.map(filter =>
           filter.get(coreExtensionData.reactElement),
         );
+
+        // Merge export customizers from all attached extensions
+        const mergedExportSettings: CatalogExportSettings = {
+          ...config.exportSettings,
+        };
+
+        for (const exportConfigInput of inputs.exportConfig) {
+          const data = exportConfigInput.get(catalogExportConfigDataRef);
+          if (data) {
+            if (data.exporters) {
+              mergedExportSettings.exporters = {
+                ...mergedExportSettings.exporters,
+                ...data.exporters,
+              };
+            }
+            if (data.columns && !mergedExportSettings.columns) {
+              mergedExportSettings.columns = data.columns;
+            }
+            if (data.onSuccess && !mergedExportSettings.onSuccess) {
+              mergedExportSettings.onSuccess = data.onSuccess;
+            }
+            if (data.onError && !mergedExportSettings.onError) {
+              mergedExportSettings.onError = data.onError;
+            }
+          }
+        }
+
         return (
           <NfsDefaultCatalogPage
             filters={<>{filters}</>}
             pagination={config.pagination}
+            exportSettings={
+              mergedExportSettings.enabled ? mergedExportSettings : undefined
+            }
           />
         );
       },
@@ -80,6 +155,10 @@ export const catalogPage = PageBlueprint.makeWithOverrides({
 export const catalogEntityPage = PageBlueprint.makeWithOverrides({
   name: 'entity',
   inputs: {
+    headerLayouts: createExtensionInput([
+      EntityHeaderLayoutBlueprint.dataRefs.component,
+      EntityHeaderLayoutBlueprint.dataRefs.filterFunction.optional(),
+    ]),
     headers: createExtensionInput([
       EntityHeaderBlueprint.dataRefs.element.optional(),
       EntityHeaderBlueprint.dataRefs.filterFunction.optional(),
@@ -95,7 +174,7 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
       EntityContentBlueprint.dataRefs.icon.optional(),
     ]),
     contextMenuItems: createExtensionInput([
-      coreExtensionData.reactElement,
+      EntityContextMenuItemBlueprint.dataRefs.data,
       EntityContextMenuItemBlueprint.dataRefs.filterFunction.optional(),
     ]),
   },
@@ -122,8 +201,6 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
   factory(originalFactory, { config, inputs }) {
     return originalFactory({
       path: '/catalog/:namespace/:kind/:name',
-      noHeader: true,
-      title: 'Catalog Entity',
       // NOTE: The `convertLegacyRouteRef` call here ensures that this route ref
       // is mutated to support the new frontend system. Removing this conversion
       // is a potentially breaking change since this is a singleton and the
@@ -132,10 +209,14 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
       // `core-compat-api` package.
       routeRef: convertLegacyRouteRef(entityRouteRef), // READ THE ABOVE
       loader: async () => {
-        const { EntityLayout } = await import('./components/EntityLayout');
+        const [{ EntityLayout }, { EntityLayoutBui }] = await Promise.all([
+          import('./components/EntityLayout'),
+          import('./components/EntityLayout/EntityLayoutBui'),
+        ]);
 
         const menuItems = inputs.contextMenuItems.map(item => ({
-          element: item.get(coreExtensionData.reactElement),
+          data: item.get(EntityContextMenuItemBlueprint.dataRefs.data),
+          node: item.node,
           filter:
             item.get(EntityContextMenuItemBlueprint.dataRefs.filterFunction) ??
             (() => true),
@@ -144,16 +225,33 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
         // Get available headers, sorted by if they have a filter function or not.
         // TODO(blam): we should really have priority or some specificity here which can be used to sort the headers.
         // That can be done with embedding the priority in the dataRef alongside the filter function.
+        const headerLayouts = inputs.headerLayouts
+          .map(layout => {
+            const filterFunction = layout.get(
+              EntityHeaderLayoutBlueprint.dataRefs.filterFunction,
+            );
+            return {
+              Component: layout.get(
+                EntityHeaderLayoutBlueprint.dataRefs.component,
+              ),
+              filter: filterFunction ?? (() => true),
+              hasFilter: Boolean(filterFunction),
+            };
+          })
+          .sort((a, b) => Number(b.hasFilter) - Number(a.hasFilter));
+
         const headers = inputs.headers
-          .map(header => ({
-            element: header.get(EntityHeaderBlueprint.dataRefs.element),
-            filter: header.get(EntityHeaderBlueprint.dataRefs.filterFunction),
-          }))
-          .sort((a, b) => {
-            if (a.filter && !b.filter) return -1;
-            if (!a.filter && b.filter) return 1;
-            return 0;
-          });
+          .map(header => {
+            const filterFunction = header.get(
+              EntityHeaderBlueprint.dataRefs.filterFunction,
+            );
+            return {
+              element: header.get(EntityHeaderBlueprint.dataRefs.element),
+              filter: filterFunction ?? (() => true),
+              hasFilter: Boolean(filterFunction),
+            };
+          })
+          .sort((a, b) => Number(b.hasFilter) - Number(a.hasFilter));
 
         const groupDefinitions =
           config.groups?.reduce(
@@ -161,46 +259,69 @@ export const catalogEntityPage = PageBlueprint.makeWithOverrides({
             {} as EntityContentGroupDefinitions,
           ) ?? defaultEntityContentGroupDefinitions;
 
+        const routes = inputs.contents.map(output => ({
+          group: output.get(EntityContentBlueprint.dataRefs.group),
+          path: output.get(coreExtensionData.routePath),
+          title: output.get(EntityContentBlueprint.dataRefs.title),
+          icon: output.get(EntityContentBlueprint.dataRefs.icon),
+          if: buildFilterFn(
+            output.get(EntityContentBlueprint.dataRefs.filterFunction),
+            output.get(EntityContentBlueprint.dataRefs.filterExpression),
+          ),
+          children: output.get(coreExtensionData.reactElement),
+        }));
+
         const Component = () => {
+          const routeParams = useRouteRefParams(entityRouteRef);
           const entityFromUrl = useEntityFromUrl();
-          const { entity } = entityFromUrl;
+          const matchesRoute =
+            !!entityFromUrl.entity &&
+            stringifyEntityRef(entityFromUrl.entity) ===
+              stringifyEntityRef(routeParams);
+          const entity = matchesRoute ? entityFromUrl.entity : undefined;
+          const entityProviderProps = {
+            ...entityFromUrl,
+            entity,
+            loading:
+              entityFromUrl.loading ||
+              (!!entityFromUrl.entity && !matchesRoute),
+          };
           const filteredMenuItems = entity
-            ? menuItems.filter(i => i.filter(entity)).map(i => i.element)
+            ? menuItems
+                .filter(i => i.filter(entity))
+                .map(({ data, node }) => ({ data, node }))
             : [];
 
-          const header = headers.find(
-            h => !h.filter || h.filter(entity!),
-          )?.element;
+          const HeaderComponent = entity
+            ? headerLayouts.find(layout => layout.filter(entity))?.Component
+            : undefined;
+          const legacyHeader = entity
+            ? headers.find(header => header.filter(entity))?.element
+            : undefined;
 
-          return (
-            <AsyncEntityProvider {...entityFromUrl}>
+          const layout =
+            HeaderComponent || !legacyHeader ? (
+              <EntityLayoutBui
+                routes={routes}
+                HeaderComponent={HeaderComponent}
+                contextMenuItems={filteredMenuItems}
+                groupDefinitions={groupDefinitions}
+                defaultContentOrder={config.defaultContentOrder}
+              />
+            ) : (
               <EntityLayout
-                header={header}
+                routes={routes}
+                header={legacyHeader}
                 contextMenuItems={filteredMenuItems}
                 groupDefinitions={groupDefinitions}
                 defaultContentOrder={config.defaultContentOrder}
                 showNavItemIcons={config.showNavItemIcons}
-              >
-                {inputs.contents.map(output => (
-                  <EntityLayout.Route
-                    group={output.get(EntityContentBlueprint.dataRefs.group)}
-                    key={output.get(coreExtensionData.routePath)}
-                    path={output.get(coreExtensionData.routePath)}
-                    title={output.get(EntityContentBlueprint.dataRefs.title)}
-                    icon={output.get(EntityContentBlueprint.dataRefs.icon)}
-                    if={buildFilterFn(
-                      output.get(
-                        EntityContentBlueprint.dataRefs.filterFunction,
-                      ),
-                      output.get(
-                        EntityContentBlueprint.dataRefs.filterExpression,
-                      ),
-                    )}
-                  >
-                    {output.get(coreExtensionData.reactElement)}
-                  </EntityLayout.Route>
-                ))}
-              </EntityLayout>
+              />
+            );
+
+          return (
+            <AsyncEntityProvider {...entityProviderProps}>
+              {layout}
             </AsyncEntityProvider>
           );
         };

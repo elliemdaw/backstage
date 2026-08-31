@@ -11,6 +11,7 @@ import { TemplateAction } from '@backstage/plugin-scaffolder-node';
 // @public
 export const createGitlabGroupAccessAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -33,6 +34,7 @@ export const createGitlabGroupAccessAction: (options: {
 // @public
 export const createGitlabGroupEnsureExistsAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -55,6 +57,7 @@ export const createGitlabGroupEnsureExistsAction: (options: {
 // @public
 export const createGitlabIssueAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -85,6 +88,7 @@ export const createGitlabIssueAction: (options: {
 // @public
 export const createGitlabProjectAccessTokenAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     projectId: string | number;
@@ -104,6 +108,7 @@ export const createGitlabProjectAccessTokenAction: (options: {
 // @public
 export const createGitlabProjectDeployTokenAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -123,6 +128,7 @@ export const createGitlabProjectDeployTokenAction: (options: {
 // @public
 export const createGitlabProjectVariableAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -146,6 +152,7 @@ export const createGitlabProjectVariableAction: (options: {
 // @public
 export const createGitlabRepoPushAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -155,11 +162,12 @@ export const createGitlabRepoPushAction: (options: {
     targetPath?: string | undefined;
     token?: string | undefined;
     commitAction?: 'auto' | 'update' | 'create' | 'delete' | undefined;
+    allowEmpty?: boolean | undefined;
   },
   {
     projectid: string;
     projectPath: string;
-    commitHash: string;
+    commitHash?: string | undefined;
   },
   'v2'
 >;
@@ -263,6 +271,7 @@ export function createPublishGitlabAction(options: {
 // @public
 export const createPublishGitlabMergeRequestAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -280,6 +289,7 @@ export const createPublishGitlabMergeRequestAction: (options: {
     reviewers?: string[] | undefined;
     assignReviewersFromApprovalRules?: boolean | undefined;
     labels?: string | string[] | undefined;
+    autoMerge?: boolean | undefined;
   },
   {
     targetBranchName: string;
@@ -293,6 +303,7 @@ export const createPublishGitlabMergeRequestAction: (options: {
 // @public
 export const createTriggerGitlabPipelineAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;
@@ -311,6 +322,7 @@ export const createTriggerGitlabPipelineAction: (options: {
 // @public
 export const editGitlabIssueAction: (options: {
   integrations: ScmIntegrationRegistry;
+  requireScmUserCredentials?: boolean;
 }) => TemplateAction<
   {
     repoUrl: string;

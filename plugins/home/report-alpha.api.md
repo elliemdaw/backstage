@@ -13,7 +13,6 @@ import { ExtensionInput } from '@backstage/frontend-plugin-api';
 import { HomePageLayoutProps } from '@backstage/plugin-home-react/alpha';
 import { HomePageWidgetBlueprintParams } from '@backstage/plugin-home-react/alpha';
 import { HomePageWidgetData } from '@backstage/plugin-home-react/alpha';
-import { IconComponent } from '@backstage/frontend-plugin-api';
 import { IconElement } from '@backstage/frontend-plugin-api';
 import { JSX as JSX_2 } from 'react';
 import { OverridableExtensionDefinition } from '@backstage/frontend-plugin-api';
@@ -54,9 +53,27 @@ const _default: OverridableFrontendPlugin<
         element: JSX.Element;
       };
     }>;
+    'home-page-widget:home/most-visited': OverridableExtensionDefinition<{
+      kind: 'home-page-widget';
+      name: 'most-visited';
+      config: {};
+      configInput: {};
+      output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
+      inputs: {};
+      params: HomePageWidgetBlueprintParams;
+    }>;
     'home-page-widget:home/random-joke': OverridableExtensionDefinition<{
       kind: 'home-page-widget';
       name: 'random-joke';
+      config: {};
+      configInput: {};
+      output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
+      inputs: {};
+      params: HomePageWidgetBlueprintParams;
+    }>;
+    'home-page-widget:home/recently-visited': OverridableExtensionDefinition<{
+      kind: 'home-page-widget';
+      name: 'recently-visited';
       config: {};
       configInput: {};
       output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
@@ -73,45 +90,91 @@ const _default: OverridableFrontendPlugin<
       params: HomePageWidgetBlueprintParams;
     }>;
     'home-page-widget:home/toolkit': OverridableExtensionDefinition<{
-      kind: 'home-page-widget';
-      name: 'toolkit';
-      config: {};
-      configInput: {};
-      output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
-      inputs: {};
-      params: HomePageWidgetBlueprintParams;
-    }>;
-    'nav-item:home': OverridableExtensionDefinition<{
-      kind: 'nav-item';
-      name: undefined;
       config: {
-        title: string | undefined;
+        tools: {
+          url: string;
+          label: string;
+          icon?: string | undefined;
+        }[];
       };
       configInput: {
-        title?: string | undefined;
+        tools?:
+          | {
+              url: string;
+              label: string;
+              icon?: string | undefined;
+            }[]
+          | undefined;
       };
-      output: ExtensionDataRef<
-        {
-          title: string;
-          icon: IconComponent;
-          routeRef: RouteRef<undefined>;
-        },
-        'core.nav-item.target',
-        {}
-      >;
+      output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
       inputs: {};
-      params: {
-        title: string;
-        icon: IconComponent;
-        routeRef: RouteRef<undefined>;
+      kind: 'home-page-widget';
+      name: 'toolkit';
+      params: HomePageWidgetBlueprintParams;
+    }>;
+    'home-page-widget:home/world-clock': OverridableExtensionDefinition<{
+      config: {
+        clockConfigs:
+          | {
+              label: string;
+              timeZone: string;
+            }[]
+          | undefined;
+        customTimeFormat:
+          | {
+              hour12?: boolean | undefined;
+            }
+          | undefined;
       };
+      configInput: {
+        clockConfigs?:
+          | {
+              label: string;
+              timeZone: string;
+            }[]
+          | undefined;
+        customTimeFormat?:
+          | {
+              hour12?: boolean | undefined;
+            }
+          | undefined;
+      };
+      output: ExtensionDataRef<HomePageWidgetData, 'home.widget.data', {}>;
+      inputs: {};
+      kind: 'home-page-widget';
+      name: 'world-clock';
+      params: HomePageWidgetBlueprintParams;
     }>;
     'page:home': OverridableExtensionDefinition<{
       config: {
+        defaultConfig:
+          | {
+              component: string;
+              column: number;
+              row: number;
+              width: number;
+              height: number;
+              movable?: boolean | undefined;
+              deletable?: boolean | undefined;
+              resizable?: boolean | undefined;
+            }[]
+          | undefined;
         path: string | undefined;
         title: string | undefined;
       };
       configInput: {
+        defaultConfig?:
+          | {
+              component: string;
+              column: number;
+              row: number;
+              width: number;
+              height: number;
+              movable?: boolean | undefined;
+              deletable?: boolean | undefined;
+              resizable?: boolean | undefined;
+            }[]
+          | undefined;
         path?: string | undefined;
         title?: string | undefined;
       };
@@ -216,6 +279,7 @@ export const homeTranslationRef: TranslationRef<
   {
     readonly 'starredEntities.noStarredEntitiesMessage': 'Click the star beside an entity name to add it to this list!';
     readonly 'addWidgetDialog.title': 'Add new widget to dashboard';
+    readonly 'addWidgetDialog.noAvailableWidgets': 'All available widgets have been added to the dashboard.';
     readonly 'customHomepageButtons.cancel': 'Cancel';
     readonly 'customHomepageButtons.clearAll': 'Clear all';
     readonly 'customHomepageButtons.edit': 'Edit';
@@ -224,10 +288,13 @@ export const homeTranslationRef: TranslationRef<
     readonly 'customHomepageButtons.save': 'Save';
     readonly 'customHomepage.noWidgets': "No widgets added. Start by clicking the 'Add widget' button.";
     readonly 'widgetSettingsOverlay.cancelButtonTitle': 'Cancel';
+    readonly 'widgetSettingsOverlay.editSettingsTooltip': 'Edit settings';
     readonly 'widgetSettingsOverlay.editSettingsTooptip': 'Edit settings';
     readonly 'widgetSettingsOverlay.deleteWidgetTooltip': 'Delete widget';
     readonly 'widgetSettingsOverlay.submitButtonTitle': 'Submit';
     readonly 'starredEntityListItem.removeFavoriteEntityTitle': 'Remove entity from favorites';
+    readonly 'visitList.disabled.title': 'Visit tracking is not enabled.';
+    readonly 'visitList.disabled.description': 'Enable visit tracking in your app-config.yaml to see your most visited and recently visited pages here.';
     readonly 'visitList.empty.title': 'There are no visits to show yet.';
     readonly 'visitList.empty.description': 'Once you start using Backstage, your visits will appear here as a quick link to carry on where you left off.';
     readonly 'visitList.few.title': 'The more pages you visit, the more pages will appear here.';

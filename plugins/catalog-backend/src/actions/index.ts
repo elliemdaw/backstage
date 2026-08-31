@@ -23,11 +23,13 @@ import { createValidateEntityAction } from './createValidateEntityAction.ts';
 import { createRegisterCatalogEntitiesAction } from './createRegisterCatalogEntitiesAction.ts';
 import { createUnregisterCatalogEntitiesAction } from './createUnregisterCatalogEntitiesAction.ts';
 import { createQueryCatalogEntitiesAction } from './createQueryCatalogEntitiesAction.ts';
+import { createRefreshCatalogEntityAction } from './createRefreshCatalogEntityAction.ts';
 
 export const createCatalogActions = (options: {
   actionsRegistry: ActionsRegistryService;
   catalog: CatalogService;
   modelHolder: ModelHolder | undefined;
+  useExperimentalCatalogLayersDescriptions?: boolean;
 }) => {
   createGetCatalogModelDescriptionAction(options);
   createGetCatalogEntityAction(options);
@@ -35,4 +37,5 @@ export const createCatalogActions = (options: {
   createRegisterCatalogEntitiesAction(options);
   createUnregisterCatalogEntitiesAction(options);
   createQueryCatalogEntitiesAction(options);
+  createRefreshCatalogEntityAction(options);
 };

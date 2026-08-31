@@ -67,7 +67,7 @@ When you see `dir:.`, you can translate it to mean:
 
 The directory tree of the entity would look something like this:
 
-```
+```text
 ├── catalog-info.yaml
 ├── mkdocs.yml
 └── docs
@@ -78,7 +78,7 @@ If, for example, you wanted to keep a lean root directory, you could place your
 `mkdocs.yml` file in a subdirectory and update the `backstage.io/techdocs-ref`
 annotation value accordingly, e.g. to `dir:./sub-folder`:
 
-```
+```text
 ├── catalog-info.yaml
 └── sub-folder
     ├── mkdocs.yml
@@ -364,7 +364,7 @@ Start writing your documentation by adding more markdown (.md) files to this
 folder (/docs) or replace the content in this file.
 ```
 
-:::note Note
+:::note
 
 The values of `site_name`, `component_id` and `site_description` depends
 on how you have configured your `template.yaml`.
@@ -373,9 +373,24 @@ on how you have configured your `template.yaml`.
 
 Done! You now have support for TechDocs in your own software template!
 
-### Prevent download of Google fonts
+### Disable external fonts
 
-If your Backstage instance does not have internet access, the generation will fail. TechDocs tries to download the Roboto font from Google. You can disable it by adding the following lines to mkdocs.yaml:
+`techdocs.generator.mkdocs.disableExternalFonts`
+
+(Optional) Use this when the generator cannot reach the internet (for example air-gapped or restricted networks). MkDocs Material otherwise tries to download the Roboto font from Google during generation.
+
+When `true`, TechDocs patches each `mkdocs.yml` during generation: if no `theme` section exists it adds `name: material` and `font: false`; if a `theme` exists but `font` is omitted, it sets `font: false`; if `font` is already set in the file, your value is left unchanged.
+
+**Example:**
+
+```yaml
+techdocs:
+  generator:
+    mkdocs:
+      disableExternalFonts: true
+```
+
+Alternatively, configure `mkdocs.yml` manually:
 
 ```yaml
 theme:
@@ -383,11 +398,19 @@ theme:
   font: false
 ```
 
-:::note Note
+**Note:** When using `theme.font` in `mkdocs.yml`, `theme.name: material` is required. If `font` is already set in the file, app-config patching does not override it; it only adds `font: false` when `font` was not configured.
 
-The addition `name: material` is necessary. Otherwise it will not work
+#### Using techdocs-cli in CI/CD
 
-:::
+When generating TechDocs sites in CI/CD workflows using `techdocs-cli`, you can
+use the `--disableExternalFonts` flag:
+
+```bash
+techdocs-cli generate --disableExternalFonts
+```
+
+This will automatically patch the `mkdocs.yml` file during the generation
+process, just like the `app-config.yaml` option does for local generation.
 
 ## How to enable iframes in TechDocs
 
@@ -539,7 +562,7 @@ plugins:
   - kroki
 ```
 
-:::note Note
+:::note
 
 You will very likely want to set a `kroki` `ServerURL` configuration in your
 `mkdocs.yml` as well. The default value is the publicly hosted `kroki.io`. If
@@ -721,7 +744,7 @@ backend.add(techdocsCustomBuildStrategy);
 backend.start();
 ```
 
-:::note Note
+:::note
 
 You may need to add the `@backstage/plugin-techdocs-node` package to your backend `package.json` if it's not been imported already.
 
@@ -805,7 +828,7 @@ metadata:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: example-platfrom
+  name: example-platform
   title: Example Application Platform
   namespace: default
   description: This is the child entity
@@ -825,7 +848,7 @@ You may want to make files available for download by your users such as PDF
 documents, images, or code templates. Download links for files included in your
 docs directory can be made by adding `{: download }` after a markdown link.
 
-```
+```markdown
 [Link text](https://example.com/foo.jpg){: download }
 ```
 
@@ -835,6 +858,6 @@ clicked.
 Specify a file name to control the name the file will be given when it is
 downloaded:
 
-```
+```markdown
 [Link text](https://example.com/foo.jpg){: download="foo.jpg" }
 ```

@@ -116,7 +116,7 @@ yarn start
 
 The output is similar to this:
 
-```console
+```log
 [0] webpack output is served from /
 [1] Loaded config from app-config.yaml
 ```
@@ -124,8 +124,15 @@ The output is similar to this:
 ### Use appropriate language tags for code blocks
 
 Use the correct language identifier for fenced code blocks: `ts` or `typescript`
-for TypeScript, `yaml` for YAML configuration, `shell` for shell commands,
-`console` for command output, and `diff` for changesets.
+for TypeScript, `yaml` for YAML configuration, `shell` for shell commands, `log`
+for command output, `shell-session` for a transcript that mixes prompts and
+output, and `diff` for changesets. Use `text` when nothing else fits, such as a
+directory tree.
+
+Every identifier must be a language Prism recognizes, and anything outside the
+set Docusaurus bundles by default has to be listed in `additionalLanguages` in
+`microsite/docusaurus.config.ts`. An unrecognized identifier is not an error —
+the block simply loses its syntax highlighting, which is easy to miss.
 
 ## Admonitions
 
@@ -147,6 +154,19 @@ You can use _Markdown_ inside admonitions.
 Use `:::note` for supplementary information, `:::tip` for helpful suggestions,
 `:::caution` for potential pitfalls, and `:::danger` for actions that could
 cause data loss or security issues.
+
+To give an admonition a custom title, put the title in square brackets. Writing
+the title after the type without brackets no longer works, and the admonition
+renders as plain text instead.
+
+```markdown
+:::tip[Browser window didn't open]
+Navigate to `http://localhost:3000` yourself.
+:::
+```
+
+Only add a title when it says something the type doesn't. A `:::note` titled
+`Note` is noise, so leave it off.
 
 Keep admonitions short and focused. Each admonition should contain a single,
 clear point. If you find yourself writing multiple paragraphs inside an
@@ -218,6 +238,17 @@ helps downstream localization.
 | :------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------- |
 | Write hyperlinks with descriptive text. For example: See [Getting Started](../getting-started/index.md) for details. | Use ambiguous link text. For example: See [here](../getting-started/index.md) for details. |
 | Write Markdown-style links: `[link text](./index.md)`.                                                               | Write HTML-style links or create links that open in new tabs.                              |
+| Give a plain address some markup: `<https://example.com>`.                                                           | Paste a bare address: `https://example.com`.                                               |
+
+A link with descriptive text is the better choice wherever you can write one.
+People using a screen reader often navigate a page by listing its links, so link
+text such as `the Kubernetes configuration` tells them where it goes while a raw
+address does not.
+
+When the address itself is what you want to show, the syntax depends on the file
+extension. In `.md` files, use either angle brackets or a Markdown link. In
+`.mdx` files, use a Markdown link: angle brackets are not valid there and the
+build fails.
 
 ### Lists
 
@@ -228,6 +259,14 @@ helps downstream localization.
 - Use (`-`) for unordered lists.
 - Leave a blank line after each list.
 - Indent nested lists with two spaces.
+- Use a numbered list for a sequence of steps rather than prose with
+  "First", "Then", and "Finally". Numbered lists are easier to scan, make
+  the order explicit, and give readers a clear way to reference a specific
+  step.
+
+| Do                                                                 | Don't                                                                           |
+| :----------------------------------------------------------------- | :------------------------------------------------------------------------------ |
+| 1) Install the package. 2) Run the migration. 3) Start the server. | First, install the package. Then, run the migration. Finally, start the server. |
 
 ### Tables
 
@@ -353,7 +392,7 @@ A list of Backstage-specific terms and words to be used consistently across
 the site.
 
 | Term               | Usage                                                                                                                                  |
-| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------- |
 | Backstage          | Always capitalized.                                                                                                                    |
 | plugin             | Lowercase when referring to the concept. Use code style when referring to a specific package, for example `@backstage/plugin-catalog`. |
 | Software Catalog   | Capitalized as a product name. Use "catalog" (lowercase) when referring to the concept generically.                                    |
@@ -362,4 +401,12 @@ the site.
 | Scaffolder         | Capitalized as a product name.                                                                                                         |
 | app-config         | Use code style: `app-config.yaml`.                                                                                                     |
 | open source        | Two words, lowercase (unless starting a sentence).                                                                                     |
-| backend system     | Lowercase when referring to the Backstage backend framework.                                                                           |     |
+| backend system     | Lowercase when referring to the Backstage backend framework.                                                                           |
+
+## General word list
+
+A list of general terms and words to be used consistently across the site.
+
+| Term   | Usage                                                           |
+| :----- | :-------------------------------------------------------------- |
+| GitHub | Use GitHub in documentation. In code, use `github` (lowercase). |

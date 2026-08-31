@@ -273,6 +273,24 @@ If your app starts and works in hybrid mode, you’re ready to begin Phase 2. If
 
 At this point, the contents of your app should have moved past the initial migration stage. Let's continue by gradually removing legacy code and helpers to fully adopt the new system.
 
+### Choose a customization mechanism
+
+During Phase 2, prefer the least invasive mechanism that meets your needs.
+This keeps your app closer to the default frontend system and reduces the
+amount of migration code that you need to maintain.
+
+| When you need to...                                                                     | Use...                                                                                        |
+| :-------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| Change behavior that an extension already exposes as a setting.                         | The extension's configuration.                                                                |
+| Add a new page, app root element, theme, API, or other independent extension.           | An extension blueprint and a frontend module.                                                 |
+| Change an existing extension in a way that its configuration and inputs do not support. | An extension override. Keep the override focused on the missing customization.                |
+| Preserve existing legacy app code while you migrate it.                                 | The compatibility helpers in Phase 1, then remove them as the corresponding code is migrated. |
+
+For an overview of available blueprints, look for `*Blueprint` exports in the
+relevant frontend package. Before adding an override, check the extension's
+configuration and inputs. Those mechanisms are intended for common
+customizations and avoid replacing extension behavior.
+
 ### Migrating `createApp` options
 
 Many of the `createApp` options have been migrated to use extensions instead. Each will have their own [extension blueprint](../architecture/23-extension-blueprints.md) that you use to create a custom extension. To add these standalone extensions to the app they need to be passed to `createFrontendModule`, which bundles them into a _feature_ that you can install in the app. See the [frontend module](../architecture/25-extension-overrides.md#creating-a-frontend-module) section for more information.
@@ -636,7 +654,7 @@ The `AlertDisplay` and `OAuthRequestDialog` are already provided as built-in ext
 const convertedRootFeatures = convertLegacyAppRoot(routes);
 ```
 
-But, if you have your own custom root elements you will need to migrate them to be extensions that you install in the app instead. Use `createAppRootElementExtension` to create said extension and then install it in the app.
+But, if you have your own custom root elements you will need to migrate them to be extensions that you install in the app instead. Use `AppRootElementBlueprint` from `@backstage/frontend-plugin-api` (for example `AppRootElementBlueprint.make({ ... })`) to create said extension and then install it in the app.
 
 Whether the element used to be rendered as a child of the `AppRouter` or not doesn't matter. All new root app elements will be rendered as a child of the app router.
 
@@ -686,7 +704,7 @@ createApp({
 
 #### App Root Sidebar
 
-New apps feature a built-in sidebar extension which is created by using the `NavContentBlueprint` in `src/modules/nav/Sidebar.tsx`. The default implementation of the sidebar in this blueprint will render some items explicitly in different groups, and then render the rest of the items. Nav items are auto-discovered from page extensions registered under `app/routes` (no explicit `NavItemBlueprint` required), with metadata from page config, nav item extensions, or plugin defaults.
+New apps feature a built-in sidebar extension which is created by using the `NavContentBlueprint` in `src/modules/nav/Sidebar.tsx`. The default implementation of the sidebar in this blueprint will render some items explicitly in different groups, and then render the rest of the items. Nav items are auto-discovered from page extensions registered under `app/routes`, with metadata from page config or plugin defaults.
 
 In order to migrate your existing sidebar, you will want to create an override for the `app/nav` extension. You can do this by copying the standard of having a `src/modules/nav/` folder, which can contain an extension which you can install into the `app` in the form of a `module`.
 
@@ -740,14 +758,7 @@ The deprecated `items` prop (a flat list compatible with `<SidebarItem {...item}
 
 You might also notice that when you're rendering additional fixed icons for plugins (e.g. Search in a dedicated group) these might become duplicated, since that page is also included in `nav.rest()`. To exclude an item from the remaining list, call `nav.take('page:search')` before calling `nav.rest()` — you can discard the return value. Items that have been taken will not appear in `rest()`.
 
-You can also use the old `NavItemBlueprint`-based nav item extensions to disable items from the nav bar, these can be disabled in config without affecting the page itself:
-
-```yaml title="in app-config.yaml"
-app:
-  extensions:
-    - nav-item:search: false
-    - nav-item:catalog: false
-```
+To hide a page from the sidebar without disabling the page itself, use `nav.take('page:...')` in your custom sidebar implementation before calling `nav.rest()`, or disable the page extension in config with `page:<plugin-id>: false`.
 
 #### App Root Routes
 
@@ -921,29 +932,11 @@ The `yarn new` command now defaults to the new frontend system templates for fro
 
 ### Using the App Visualizer Plugin
 
-We'd recommend that you install the `app-visualizer` plugin to help your troubleshooting. It provides a visual overview of your app's extension tree, making it easy to verify that plugins are installed correctly, see how extensions are wired together, and identify issues during migration.
+We'd recommend that you install the `app-visualizer` plugin to help your troubleshooting.
 
-#### Installation
+For installation instructions, please read [App Visualizer](./09-app-visualizer.md).
 
-Install the plugin in your app package:
-
-```bash
-yarn --cwd packages/app add @backstage/plugin-app-visualizer
-```
-
-When integrated into your app, the plugin provides the `/visualizer` route. Depending on your app setup, it may also appear in the sidebar as a **Visualizer** entry.
-
-#### Available Views
-
-The app visualizer provides three views, each accessible via tabs at the top of the page:
-
-- **Tree** — Displays the full extension tree as an interactive hierarchy. Each node represents an extension, showing its ID, the plugin it belongs to, and whether it is enabled or disabled. This is the most useful view during migration, as it lets you verify which plugins are being automatically detected and which legacy extensions have been converted. Expand nodes to see child extensions and their configuration.
-
-- **Detailed** — Shows a list of all extensions with additional metadata. Use this view to inspect individual extension properties, configuration, and attachment points. It is helpful for debugging configuration overrides and understanding how extensions are resolved.
-
-- **Text** — Renders the extension tree as plain text. This is useful for copying and pasting into GitHub issues or Discord when asking for help, since it provides a compact, readable snapshot of your app's structure.
-
-#### Using the Visualizer During Migration
+#### Using the App Visualizer During Migration
 
 During migration, the tree view is particularly helpful for:
 
@@ -969,5 +962,7 @@ If you have a use case where these are required, please reach out to us either t
 
 ## Next Steps
 
+- Explore the [Backstage demo repository](https://github.com/backstage/demo),
+  which uses the new frontend system, for a complete app reference.
 - See [architecture docs](../architecture/00-index.md) for more on the new system.
 - If you encounter issues, check [GitHub issues](https://github.com/backstage/backstage/issues) or ask in [Discord](https://discord.gg/backstage-687207715902193673).

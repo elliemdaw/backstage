@@ -21,11 +21,11 @@ import { json } from 'express';
 import Router from 'express-promise-router';
 import { McpService } from './services/McpService';
 import { createStreamableRouter } from './routers/createStreamableRouter';
-import { createSseRouter } from './routers/createSseRouter';
 import {
   actionsRegistryServiceRef,
   actionsServiceRef,
   metricsServiceRef,
+  tracingServiceRef,
 } from '@backstage/backend-plugin-api/alpha';
 import { parseServerConfigs } from './config';
 
@@ -49,6 +49,8 @@ export const mcpPlugin = createBackendPlugin({
         discovery: coreServices.discovery,
         config: coreServices.rootConfig,
         metrics: metricsServiceRef,
+        tracing: tracingServiceRef,
+        auditor: coreServices.auditor,
       },
       async init({
         actions,
@@ -59,16 +61,25 @@ export const mcpPlugin = createBackendPlugin({
         discovery,
         config,
         metrics,
+        tracing,
+        auditor,
       }) {
         const serverConfigs = parseServerConfigs(config);
         const namespacedToolNames = config.getOptionalBoolean(
           'mcpActions.namespacedToolNames',
         );
+        const captureToolPayloads =
+          config.getOptionalBoolean('mcpActions.tracing.capture.toolPayload') ??
+          false;
 
         const mcpService = await McpService.create({
           actions,
           metrics,
+          logger,
+          auditor,
           namespacedToolNames,
+          tracingService: tracing,
+          captureToolPayloads,
         });
 
         const router = Router();
@@ -81,6 +92,8 @@ export const mcpPlugin = createBackendPlugin({
               httpAuth,
               logger,
               metrics,
+              tracing,
+              auditor,
               serverConfig,
             });
 
@@ -90,37 +103,33 @@ export const mcpPlugin = createBackendPlugin({
           const serverConfig = {
             name: config.getOptionalString('mcpActions.name') ?? 'backstage',
             description: config.getOptionalString('mcpActions.description'),
+            instructions: config.getOptionalString('mcpActions.instructions'),
             includeRules: [],
             excludeRules: [],
           };
-
-          const sseRouter = createSseRouter({
-            mcpService,
-            httpAuth,
-            serverConfig,
-          });
 
           const streamableRouter = createStreamableRouter({
             mcpService,
             httpAuth,
             logger,
             metrics,
+            tracing,
+            auditor,
             serverConfig,
           });
 
-          router.use('/v1/sse', sseRouter);
           router.use('/v1', streamableRouter);
         }
 
         httpRouter.use(router);
 
+        const cimdConfigPath = config.has('auth.clientIdMetadataDocuments')
+          ? 'auth.clientIdMetadataDocuments'
+          : 'auth.experimentalClientIdMetadataDocuments';
         const oauthEnabled =
           config.getOptionalBoolean(
             'auth.experimentalDynamicClientRegistration.enabled',
-          ) ||
-          config.getOptionalBoolean(
-            'auth.experimentalClientIdMetadataDocuments.enabled',
-          );
+          ) || config.getOptionalBoolean(`${cimdConfigPath}.enabled`);
 
         if (oauthEnabled) {
           // OAuth Authorization Server Metadata (RFC 8414)
@@ -140,6 +149,10 @@ export const mcpPlugin = createBackendPlugin({
           // Protected Resource Metadata (RFC 9728)
           // https://datatracker.ietf.org/doc/html/rfc9728
           // This allows MCP clients to discover the authorization server for this resource
+          const refreshTokenEnabled = config.getOptionalBoolean(
+            'auth.experimentalRefreshToken.enabled',
+          );
+
           const serverSuffixes = serverConfigs?.size
             ? [...serverConfigs.keys()].map(key => `/v1/${key}`)
             : ['/v1'];
@@ -158,6 +171,14 @@ export const mcpPlugin = createBackendPlugin({
                 res.json({
                   resource: `${mcpBaseUrl}${suffix}`,
                   authorization_servers: [authBaseUrl],
+                  // RFC 9728 §2: clients discover which scope to request from
+                  // this field. Without it, RFC-compliant MCP clients request
+                  // no scope and never receive a refresh token (OIDC Core §11
+                  // requires offline_access to signal refresh token issuance).
+                  scopes_supported: [
+                    'openid',
+                    ...(refreshTokenEnabled ? ['offline_access'] : []),
+                  ],
                 });
               },
             );

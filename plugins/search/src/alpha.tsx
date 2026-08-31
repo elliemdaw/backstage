@@ -23,7 +23,6 @@ import { z } from 'zod/v4';
 import {
   CatalogIcon,
   Content,
-  DocsIcon,
   useSidebarPinState,
 } from '@backstage/core-components';
 import {
@@ -37,7 +36,6 @@ import {
   ApiBlueprint,
   createExtensionInput,
   PageBlueprint,
-  NavItemBlueprint,
   configApiRef,
 } from '@backstage/frontend-plugin-api';
 
@@ -63,6 +61,7 @@ import {
   SearchFilterResultTypeBlueprint,
   SearchFilterBlueprint,
 } from '@backstage/plugin-search-react/alpha';
+import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
 
 import { rootRouteRef } from './plugin';
 import { SearchClient } from './apis';
@@ -110,6 +109,8 @@ export const searchPage = PageBlueprint.makeWithOverrides({
     return originalFactory({
       path: '/search',
       routeRef: rootRouteRef,
+      title: 'Search',
+      icon: <SearchIcon fontSize="inherit" />,
       loader: async () => {
         const getResultItemComponent = (result: SearchResult) => {
           const value = inputs.items.find(item =>
@@ -159,11 +160,6 @@ export const searchPage = PageBlueprint.makeWithOverrides({
                           name: 'Software Catalog',
                           icon: <CatalogIcon />,
                         },
-                        {
-                          value: 'techdocs',
-                          name: 'Documentation',
-                          icon: <DocsIcon />,
-                        },
                       ].concat(resultTypes)}
                     />
                     <Paper className={classes.filters}>
@@ -194,17 +190,14 @@ export const searchPage = PageBlueprint.makeWithOverrides({
                         className={classes.filter}
                         label="Kind"
                         name="kind"
-                        values={[
-                          'API',
-                          'Component',
-                          'Domain',
-                          'Group',
-                          'Location',
-                          'Resource',
-                          'System',
-                          'Template',
-                          'User',
-                        ]}
+                        values={async () => {
+                          const { facets } = await catalogApi.getEntityFacets({
+                            facets: ['kind'],
+                          });
+                          return (facets.kind ?? [])
+                            .map(facet => facet.value)
+                            .sort((a, b) => a.localeCompare(b));
+                        }}
                       />
                       <SearchFilter.Checkbox
                         className={classes.filter}
@@ -258,12 +251,23 @@ export const searchPage = PageBlueprint.makeWithOverrides({
   },
 });
 
-/** @alpha */
-export const searchNavItem = NavItemBlueprint.make({
+const homePageSearchBarWidget = HomePageWidgetBlueprint.make({
+  name: 'search-bar',
   params: {
-    routeRef: rootRouteRef,
+    name: 'HomePageSearchBar',
     title: 'Search',
-    icon: SearchIcon,
+    description: 'A search bar that navigates to the search page on submit',
+    components: () =>
+      import('./components/HomePageComponent').then(m => ({
+        Content: m.HomePageSearchBar,
+      })),
+    componentProps: {
+      Renderer: ({
+        Content: SearchContent,
+      }: {
+        Content: () => JSX.Element;
+      }) => <SearchContent />,
+    },
   },
 });
 
@@ -273,7 +277,7 @@ export default createFrontendPlugin({
   title: 'Search',
   icon: <SearchIcon fontSize="inherit" />,
   info: { packageJson: () => import('../package.json') },
-  extensions: [searchApi, searchPage, searchNavItem],
+  extensions: [searchApi, searchPage, homePageSearchBarWidget],
   routes: {
     root: rootRouteRef,
   },
