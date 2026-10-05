@@ -36,6 +36,8 @@ import { RepoUrlPickerFieldSchema } from './schema';
 import { RepoUrlPickerState } from './types';
 import { parseRepoPickerUrl, serializeRepoPickerUrl } from './utils';
 import { MarkdownContent } from '@backstage/core-components';
+import { useScaffolderTheme } from '@backstage/plugin-scaffolder-react/alpha';
+import { Flex, Text } from '@backstage/ui';
 
 export { RepoUrlPickerSchema } from './schema';
 
@@ -48,6 +50,7 @@ export { RepoUrlPickerSchema } from './schema';
 export const RepoUrlPicker = (
   props: typeof RepoUrlPickerFieldSchema.TProps,
 ) => {
+  const scaffolderTheme = useScaffolderTheme();
   const { uiSchema, onChange, rawErrors, formData, schema } = props;
   const [state, setState] = useState<RepoUrlPickerState>(
     parseRepoPickerUrl(formData),
@@ -82,6 +85,13 @@ export const RepoUrlPicker = (
     () => uiSchema?.['ui:disabled'] ?? false,
     [uiSchema],
   );
+  const ownerLabel = uiSchema?.['ui:options']?.ownerLabel;
+  const ownerDescription = uiSchema?.['ui:options']?.ownerDescription;
+  const repoLabel = uiSchema?.['ui:options']?.repoLabel;
+  const repoDescription = uiSchema?.['ui:options']?.repoDescription;
+  const disableRepoAutocomplete =
+    uiSchema?.['ui:options']?.disableRepoAutocomplete ?? false;
+
   const { owner, organization, project, repoName } = state;
 
   useEffect(() => {
@@ -170,19 +180,12 @@ export const RepoUrlPicker = (
 
   const description = uiSchema['ui:description'] ?? schema.description;
 
-  return (
+  const accessToken =
+    uiSchema?.['ui:options']?.requestUserCredentials?.secretsKey &&
+    secrets[uiSchema['ui:options'].requestUserCredentials.secretsKey];
+
+  const subComponents = (
     <>
-      {schema.title && (
-        <Box my={1}>
-          <Typography variant="h5">{schema.title}</Typography>
-          <Divider />
-        </Box>
-      )}
-      {description && (
-        <Typography variant="body1">
-          <MarkdownContent content={description} />
-        </Typography>
-      )}
       <RepoUrlPickerHost
         host={state.host}
         hosts={allowedHosts}
@@ -197,10 +200,10 @@ export const RepoUrlPicker = (
           rawErrors={rawErrors}
           state={state}
           isDisabled={isDisabled}
-          accessToken={
-            uiSchema?.['ui:options']?.requestUserCredentials?.secretsKey &&
-            secrets[uiSchema['ui:options'].requestUserCredentials.secretsKey]
-          }
+          accessToken={accessToken}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
+          disableRepoAutocomplete={disableRepoAutocomplete}
         />
       )}
       {hostType === 'gitea' && (
@@ -211,6 +214,8 @@ export const RepoUrlPicker = (
           state={state}
           isDisabled={isDisabled}
           onChange={updateLocalState}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
         />
       )}
       {hostType === 'gitlab' && (
@@ -220,13 +225,15 @@ export const RepoUrlPicker = (
           state={state}
           onChange={updateLocalState}
           isDisabled={isDisabled}
-          accessToken={
-            uiSchema?.['ui:options']?.requestUserCredentials?.secretsKey &&
-            secrets[uiSchema['ui:options'].requestUserCredentials.secretsKey]
-          }
+          accessToken={accessToken}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
+          disableRepoAutocomplete={disableRepoAutocomplete}
         />
       )}
-      {hostType === 'bitbucket' && (
+      {(hostType === 'bitbucket' ||
+        hostType === 'bitbucketCloud' ||
+        hostType === 'bitbucketServer') && (
         <BitbucketRepoPicker
           allowedOwners={allowedOwners}
           allowedProjects={allowedProjects}
@@ -234,10 +241,9 @@ export const RepoUrlPicker = (
           state={state}
           onChange={updateLocalState}
           isDisabled={isDisabled}
-          accessToken={
-            uiSchema?.['ui:options']?.requestUserCredentials?.secretsKey &&
-            secrets[uiSchema['ui:options'].requestUserCredentials.secretsKey]
-          }
+          accessToken={accessToken}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
         />
       )}
       {hostType === 'azure' && (
@@ -248,6 +254,8 @@ export const RepoUrlPicker = (
           state={state}
           isDisabled={isDisabled}
           onChange={updateLocalState}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
         />
       )}
       {hostType === 'gerrit' && (
@@ -256,6 +264,8 @@ export const RepoUrlPicker = (
           state={state}
           onChange={updateLocalState}
           isDisabled={isDisabled}
+          ownerLabel={ownerLabel}
+          ownerDescription={ownerDescription}
         />
       )}
       <RepoUrlPickerRepoName
@@ -270,7 +280,41 @@ export const RepoUrlPicker = (
         isDisabled={isDisabled}
         rawErrors={rawErrors}
         availableRepos={state.availableRepos}
+        repoLabel={repoLabel}
+        repoDescription={repoDescription}
+        disableRepoAutocomplete={disableRepoAutocomplete}
       />
+    </>
+  );
+
+  if (scaffolderTheme === 'bui') {
+    return (
+      <Flex direction="column" gap="4">
+        {schema.title && (
+          <Text as="h5" variant="title-small" weight="bold">
+            {schema.title}
+          </Text>
+        )}
+        {description && <MarkdownContent content={description} />}
+        {subComponents}
+      </Flex>
+    );
+  }
+
+  return (
+    <>
+      {schema.title && (
+        <Box my={1}>
+          <Typography variant="h5">{schema.title}</Typography>
+          <Divider />
+        </Box>
+      )}
+      {description && (
+        <Typography variant="body1">
+          <MarkdownContent content={description} />
+        </Typography>
+      )}
+      {subComponents}
     </>
   );
 };

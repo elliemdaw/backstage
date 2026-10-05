@@ -26,7 +26,9 @@ Commands:
 Usage: techdocs-cli generate|build [options]
 
 Options:
+  --dangerouslyAllowAdditionalKeys [additionalKeys...]
   --defaultPlugin [defaultPlugins...]
+  --disableExternalFonts
   --docker-image <DOCKER_IMAGE>
   --etag <ETAG>
   --legacyCopyReadmeMdToIndexMd
@@ -89,6 +91,7 @@ Options:
   --osSecret <OPENSTACK SWIFT APPLICATION CREDENTIAL SECRET>
   --osSwiftUrl <OPENSTACK SWIFT SWIFTURL>
   --publisher-type <TYPE>
+  --skip-if-unchanged
   --storage-name <BUCKET/CONTAINER NAME>
   -h, --help
 ```

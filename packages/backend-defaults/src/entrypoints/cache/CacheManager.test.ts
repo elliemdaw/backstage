@@ -18,6 +18,7 @@ import { mockServices, TestCaches } from '@backstage/backend-test-utils';
 import KeyvRedis, { createCluster } from '@keyv/redis';
 import KeyvValkey from '@keyv/valkey';
 import KeyvMemcache from '@keyv/memcache';
+import { Cluster as ValkeyCluster } from 'iovalkey';
 import { CacheManager } from './CacheManager';
 
 // This test is in a separate file because the main test file uses other mocking
@@ -41,7 +42,13 @@ jest.mock('@keyv/valkey', () => {
     ...Actual,
     __esModule: true,
     default: jest.fn((...args: any[]) => new DefaultConstructor(...args)),
-    createCluster: jest.fn(),
+  };
+});
+jest.mock('iovalkey', () => {
+  const Actual = jest.requireActual('iovalkey');
+  return {
+    ...Actual,
+    Cluster: jest.fn(),
   };
 });
 jest.mock('@keyv/memcache', () => {
@@ -54,14 +61,16 @@ jest.mock('@keyv/memcache', () => {
   };
 });
 
-describe('CacheManager integration', () => {
-  const caches = TestCaches.create();
+jest.setTimeout(60_000);
 
-  afterEach(jest.clearAllMocks);
+const caches = TestCaches.create();
 
-  it.each(caches.eachSupportedId())(
-    'only creates one underlying connection per plugin, %p',
-    async cacheId => {
+describe.each(caches.eachSupportedId())(
+  'CacheManager integration, %p',
+  cacheId => {
+    afterEach(jest.clearAllMocks);
+
+    it('only creates one underlying connection per plugin', async () => {
       const { store, connection } = await caches.init(cacheId);
 
       const manager = CacheManager.fromConfig(
@@ -85,12 +94,9 @@ describe('CacheManager integration', () => {
         // eslint-disable-next-line jest/no-conditional-expect
         expect(KeyvValkey).toHaveBeenCalledTimes(3);
       }
-    },
-  );
+    });
 
-  it.each(caches.eachSupportedId())(
-    'interacts correctly with store, %p',
-    async cacheId => {
+    it('interacts correctly with store', async () => {
       const { store, connection } = await caches.init(cacheId);
 
       const manager = CacheManager.fromConfig(
@@ -114,103 +120,106 @@ describe('CacheManager integration', () => {
       await expect(plugin1.get('a')).resolves.toBe('plugin1');
       await expect(plugin2a.get('a')).resolves.toBe('plugin2b');
       await expect(plugin2b.get('a')).resolves.toBe('plugin2b');
-    },
-  );
+    });
+  },
+);
 
-  it.each(caches.eachSupportedId())(
-    'supports both milliseconds and human durations throughout, %p',
-    async cacheId => {
-      const { store, connection } = await caches.init(cacheId);
+it('supports both milliseconds and human durations throughout', async () => {
+  let now = Date.now();
+  const dateNow = jest.spyOn(Date, 'now').mockImplementation(() => now);
 
-      for (const defaultTtl of [200, { milliseconds: 200 }]) {
-        const manager = CacheManager.fromConfig(
-          mockServices.rootConfig({
-            data: {
-              backend: {
-                cache: {
-                  store,
-                  connection,
-                  defaultTtl,
-                },
-              },
-            },
-          }),
-        ).forPlugin('p');
-
-        const defaultClient = manager;
-        const numberOverrideClient = manager.withOptions({ defaultTtl: 400 });
-        const durationOverrideClient = manager.withOptions({
-          defaultTtl: { milliseconds: 400 },
-        });
-
-        await defaultClient.set('a', 'x');
-        await defaultClient.set('b', 'x');
-        await numberOverrideClient.set('c', 'x');
-        await durationOverrideClient.set('d', 'x');
-        await defaultClient.set('e', 'x', { ttl: 400 });
-        await defaultClient.set('f', 'x', { ttl: { milliseconds: 400 } });
-
-        await expect(defaultClient.get('a')).resolves.toBe('x');
-        await expect(defaultClient.get('b')).resolves.toBe('x');
-        await expect(defaultClient.get('c')).resolves.toBe('x');
-        await expect(defaultClient.get('d')).resolves.toBe('x');
-        await expect(defaultClient.get('e')).resolves.toBe('x');
-        await expect(defaultClient.get('f')).resolves.toBe('x');
-
-        await new Promise(resolve => setTimeout(resolve, 50 + 200));
-
-        await expect(defaultClient.get('a')).resolves.toBeUndefined();
-        await expect(defaultClient.get('b')).resolves.toBeUndefined();
-        await expect(defaultClient.get('c')).resolves.toBe('x');
-        await expect(defaultClient.get('d')).resolves.toBe('x');
-        await expect(defaultClient.get('e')).resolves.toBe('x');
-        await expect(defaultClient.get('f')).resolves.toBe('x');
-
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        await expect(defaultClient.get('a')).resolves.toBeUndefined();
-        await expect(defaultClient.get('b')).resolves.toBeUndefined();
-        await expect(defaultClient.get('c')).resolves.toBeUndefined();
-        await expect(defaultClient.get('d')).resolves.toBeUndefined();
-        await expect(defaultClient.get('e')).resolves.toBeUndefined();
-        await expect(defaultClient.get('f')).resolves.toBeUndefined();
-      }
-    },
-  );
-
-  it('rejects invalid defaultTtl', () => {
-    expect(() =>
-      CacheManager.fromConfig(
+  try {
+    for (const defaultTtl of [200, { milliseconds: 200 }]) {
+      const manager = CacheManager.fromConfig(
         mockServices.rootConfig({
           data: {
             backend: {
               cache: {
                 store: 'memory',
+                defaultTtl,
               },
             },
           },
         }),
-      ),
-    ).not.toThrow();
+      ).forPlugin('p');
 
-    expect(() =>
-      CacheManager.fromConfig(
-        mockServices.rootConfig({
-          data: {
-            backend: {
-              cache: {
-                store: 'memory',
-                defaultTtl: 'hello',
-              },
+      const defaultClient = manager;
+      const numberOverrideClient = manager.withOptions({ defaultTtl: 400 });
+      const durationOverrideClient = manager.withOptions({
+        defaultTtl: { milliseconds: 400 },
+      });
+
+      await defaultClient.set('a', 'x');
+      await defaultClient.set('b', 'x');
+      await numberOverrideClient.set('c', 'x');
+      await durationOverrideClient.set('d', 'x');
+      await defaultClient.set('e', 'x', { ttl: 400 });
+      await defaultClient.set('f', 'x', { ttl: { milliseconds: 400 } });
+
+      await expect(defaultClient.get('a')).resolves.toBe('x');
+      await expect(defaultClient.get('b')).resolves.toBe('x');
+      await expect(defaultClient.get('c')).resolves.toBe('x');
+      await expect(defaultClient.get('d')).resolves.toBe('x');
+      await expect(defaultClient.get('e')).resolves.toBe('x');
+      await expect(defaultClient.get('f')).resolves.toBe('x');
+
+      now += 250;
+
+      await expect(defaultClient.get('a')).resolves.toBeUndefined();
+      await expect(defaultClient.get('b')).resolves.toBeUndefined();
+      await expect(defaultClient.get('c')).resolves.toBe('x');
+      await expect(defaultClient.get('d')).resolves.toBe('x');
+      await expect(defaultClient.get('e')).resolves.toBe('x');
+      await expect(defaultClient.get('f')).resolves.toBe('x');
+
+      now += 200;
+
+      await expect(defaultClient.get('a')).resolves.toBeUndefined();
+      await expect(defaultClient.get('b')).resolves.toBeUndefined();
+      await expect(defaultClient.get('c')).resolves.toBeUndefined();
+      await expect(defaultClient.get('d')).resolves.toBeUndefined();
+      await expect(defaultClient.get('e')).resolves.toBeUndefined();
+      await expect(defaultClient.get('f')).resolves.toBeUndefined();
+    }
+  } finally {
+    dateNow.mockRestore();
+  }
+});
+
+it('rejects invalid defaultTtl', () => {
+  expect(() =>
+    CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'memory',
             },
           },
-        }),
-      ),
-    ).toThrow(/Invalid duration 'hello' in config/);
-  });
+        },
+      }),
+    ),
+  ).not.toThrow();
+
+  expect(() =>
+    CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'memory',
+              defaultTtl: 'hello',
+            },
+          },
+        },
+      }),
+    ),
+  ).toThrow(/Invalid duration 'hello' in config/);
 });
 
 describe('CacheManager store options', () => {
+  afterEach(jest.clearAllMocks);
+
   it('uses default options when no store-specific config exists', () => {
     const manager = CacheManager.fromConfig(
       mockServices.rootConfig({
@@ -307,6 +316,9 @@ describe('CacheManager store options', () => {
   });
 
   it('accepts client config for clustered mode', () => {
+    const clusterInstance = { fake: 'cluster' };
+    (createCluster as jest.Mock).mockReturnValue(clusterInstance);
+
     const manager = CacheManager.fromConfig(
       mockServices.rootConfig({
         data: {
@@ -329,8 +341,109 @@ describe('CacheManager store options', () => {
     );
     manager.forPlugin('p1');
 
-    expect(KeyvRedis).toHaveBeenCalledWith(expect.anything(), {
+    expect(KeyvRedis).toHaveBeenCalledWith(clusterInstance, {
       keyPrefixSeparator: '!',
+    });
+  });
+
+  it('uses iovalkey Cluster for valkey cluster mode', () => {
+    const manager = CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'valkey',
+              connection: 'redis://localhost:6379',
+              valkey: {
+                cluster: {
+                  rootNodes: [
+                    { host: 'localhost', port: 6379 },
+                    { host: 'localhost', port: 6380 },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    manager.forPlugin('p1');
+
+    expect(ValkeyCluster).toHaveBeenCalledWith(
+      [
+        { host: 'localhost', port: 6379 },
+        { host: 'localhost', port: 6380 },
+      ],
+      {
+        redisOptions: undefined,
+        scaleReads: undefined,
+        maxRedirections: undefined,
+        lazyConnect: undefined,
+      },
+    );
+    expect(KeyvValkey).toHaveBeenCalledWith(expect.any(Object), {
+      keyPrefix: undefined,
+    });
+  });
+
+  it('passes valkey cluster options from config', () => {
+    const manager = CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'valkey',
+              connection: 'redis://localhost:6379',
+              valkey: {
+                client: { keyPrefix: 'my-app:' },
+                cluster: {
+                  rootNodes: [{ host: 'localhost', port: 6379 }],
+                  useReplicas: true,
+                  maxCommandRedirections: 5,
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    manager.forPlugin('p1');
+
+    expect(ValkeyCluster).toHaveBeenCalledWith(
+      [{ host: 'localhost', port: 6379 }],
+      {
+        redisOptions: undefined,
+        scaleReads: 'slave',
+        maxRedirections: 5,
+        lazyConnect: undefined,
+      },
+    );
+    expect(KeyvValkey).toHaveBeenCalledWith(expect.any(Object), {
+      keyPrefix: 'my-app:',
+    });
+  });
+
+  it('defaults to non-clustered valkey when cluster config is missing root nodes', () => {
+    const manager = CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'valkey',
+              connection: 'redis://localhost:6379',
+              valkey: {
+                cluster: {},
+              },
+            },
+          },
+        },
+      }),
+    );
+    manager.forPlugin('p1');
+
+    expect(ValkeyCluster).not.toHaveBeenCalled();
+    expect(KeyvValkey).toHaveBeenCalledWith('redis://localhost:6379', {
+      keyPrefix: undefined,
     });
   });
 
@@ -401,6 +514,160 @@ describe('CacheManager store options', () => {
       keyPrefixSeparator: ':',
     });
   });
+
+  it('passes connection object directly to Redis client in non-clustered mode', () => {
+    const manager = CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'redis',
+              connection: {
+                url: 'redis://localhost:6379',
+                pingInterval: 15000,
+              },
+            },
+          },
+        },
+      }),
+    );
+    manager.forPlugin('p1');
+
+    expect(KeyvRedis).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'redis://localhost:6379',
+        pingInterval: 15000,
+      }),
+      expect.objectContaining({ keyPrefixSeparator: ':' }),
+    );
+  });
+
+  it('merges connection object into cluster defaults when configured', () => {
+    const clusterInstance = { fake: 'cluster' };
+    (createCluster as jest.Mock).mockReturnValue(clusterInstance);
+
+    const manager = CacheManager.fromConfig(
+      mockServices.rootConfig({
+        data: {
+          backend: {
+            cache: {
+              store: 'redis',
+              connection: {
+                url: 'redis://localhost:6379',
+                pingInterval: 10000,
+              },
+              redis: {
+                cluster: {
+                  rootNodes: [{ url: 'redis://localhost:6379' }],
+                  defaults: { password: 'secret' },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    manager.forPlugin('p1');
+
+    expect(createCluster).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rootNodes: [{ url: 'redis://localhost:6379' }],
+        defaults: expect.objectContaining({
+          password: 'secret',
+          pingInterval: 10000,
+        }),
+      }),
+    );
+    expect(createCluster).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaults: expect.not.objectContaining({ url: expect.anything() }),
+      }),
+    );
+    expect(KeyvRedis).toHaveBeenCalledWith(
+      clusterInstance,
+      expect.objectContaining({ keyPrefixSeparator: ':' }),
+    );
+  });
+
+  it('rejects connection object without a url', () => {
+    expect(() =>
+      CacheManager.fromConfig(
+        mockServices.rootConfig({
+          data: {
+            backend: {
+              cache: {
+                store: 'redis',
+                connection: { pingInterval: 15000 },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(
+      "backend.cache.connection object must include a non-empty 'url' string",
+    );
+  });
+
+  it('rejects connection object with empty url', () => {
+    expect(() =>
+      CacheManager.fromConfig(
+        mockServices.rootConfig({
+          data: {
+            backend: {
+              cache: {
+                store: 'redis',
+                connection: { url: '' },
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow(
+      "backend.cache.connection object must include a non-empty 'url' string",
+    );
+  });
+
+  it('rejects connection as an array', () => {
+    expect(() =>
+      CacheManager.fromConfig(
+        mockServices.rootConfig({
+          data: {
+            backend: {
+              cache: {
+                store: 'redis',
+                connection: ['redis://localhost:6379'],
+              },
+            },
+          },
+        }),
+      ),
+    ).toThrow('backend.cache.connection must be a string or object');
+  });
+
+  it.each(['valkey', 'memcache', 'memory'])(
+    'rejects connection object for non-redis store %s',
+    store => {
+      expect(() =>
+        CacheManager.fromConfig(
+          mockServices.rootConfig({
+            data: {
+              backend: {
+                cache: {
+                  store,
+                  connection: {
+                    url: 'redis://localhost:6379',
+                    pingInterval: 15000,
+                  },
+                },
+              },
+            },
+          }),
+        ),
+      ).toThrow(
+        "backend.cache.connection object form is only supported when backend.cache.store is 'redis'",
+      );
+    },
+  );
 
   describe('Namespace construction', () => {
     it('returns pluginId when no store options are provided', () => {

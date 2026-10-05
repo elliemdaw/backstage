@@ -88,7 +88,7 @@ const flatten = (text: string, child: any): string => {
 const headingRenderer = ({ level, children }: HeadingProps) => {
   const childrenArray = Children.toArray(children);
   const text = childrenArray.reduce(flatten, '');
-  const slug = text.toLocaleLowerCase('en-US').replace(/\W/g, '-');
+  const slug = text.toLowerCase().replace(/\W/g, '-');
   return createElement(`h${level}`, { id: slug }, children);
 };
 
@@ -130,7 +130,7 @@ const gfmRehypePlugins: PluggableList = [
   [
     rehypeRaw,
     {
-      tagFiter: true,
+      tagfilter: true,
     },
   ],
   [

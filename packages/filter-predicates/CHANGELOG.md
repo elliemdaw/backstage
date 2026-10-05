@@ -1,5 +1,57 @@
 # @backstage/filter-predicates
 
+## 0.1.6-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.10-next.0
+  - @backstage/errors@1.3.2-next.0
+
+## 0.1.5
+
+### Patch Changes
+
+- 736d84e: Use locale-insensitive Unicode casing for consistent string handling across environments.
+- 603e704: The JSON Schema exported for filter predicates can now be compiled by validators built on RE2 (for example Go's `regexp`, used by Amazon Bedrock AgentCore Gateway), which previously rejected the predicate key pattern and failed every call to tools such as `query-catalog-entities`. Accepted keys are unchanged, except that a key whose first character is U+2028 or U+2029 is no longer rejected.
+- 6dcb08a: Reduced the frontend bundle size by letting bundlers tree-shake zod, which previously pulled every zod locale into the bundle. Takes effect on zod 4.5.0 and newer.
+- Updated dependencies
+  - @backstage/config@1.3.9
+
+## 0.1.5-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.9-next.0
+
+## 0.1.5-next.0
+
+### Patch Changes
+
+- 6dcb08a: Reduced the frontend bundle size by letting bundlers tree-shake zod, which previously pulled every zod locale into the bundle. Takes effect on zod 4.5.0 and newer.
+
+## 0.1.4
+
+### Patch Changes
+
+- 28c1c1c: Synced zod-validation-error versions between packages
+
+## 0.1.4-next.0
+
+### Patch Changes
+
+- 28c1c1c: Synced zod-validation-error versions between packages
+
+## 0.1.3
+
+### Patch Changes
+
+- 691da8d: Filter predicates that mix operator keys (`$all`, `$any`, `$not`) with other keys are now rejected. Previously, a predicate like `{ kind: 'API', $not: { 'spec.type': 'dataset' } }` would silently drop the `kind` check. The correct form wraps conditions in `$all`.
+- Updated dependencies
+  - @backstage/errors@1.3.1
+  - @backstage/config@1.3.8
+
 ## 0.1.3-next.0
 
 ### Patch Changes

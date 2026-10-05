@@ -1,5 +1,38 @@
 # @backstage/module-federation-common
 
+## 0.1.6-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/config@1.3.10-next.0
+  - @backstage/errors@1.3.2-next.0
+
+## 0.1.5
+
+### Patch Changes
+
+- 064c2de: Updated the Module Federation dependencies to versions that avoid known security vulnerabilities.
+- Updated dependencies
+  - @backstage/config@1.3.9
+
+## 0.1.5-next.0
+
+### Patch Changes
+
+- 064c2de: Updated the Module Federation dependencies to versions that avoid known security vulnerabilities.
+- Updated dependencies
+  - @backstage/config@1.3.9-next.0
+
+## 0.1.4
+
+### Patch Changes
+
+- 41070b8: Upgraded `@module-federation/enhanced`, `@module-federation/runtime`, and `@module-federation/sdk` from `^0.21.6` to `^2.3.3` to address known vulnerabilities.
+- Updated dependencies
+  - @backstage/errors@1.3.1
+  - @backstage/config@1.3.8
+
 ## 0.1.4-next.0
 
 ### Patch Changes

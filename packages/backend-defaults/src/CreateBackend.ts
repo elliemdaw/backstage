@@ -32,6 +32,7 @@ import { rootHealthServiceFactory } from '@backstage/backend-defaults/rootHealth
 import { rootHttpRouterServiceFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import { rootLifecycleServiceFactory } from '@backstage/backend-defaults/rootLifecycle';
 import { rootLoggerServiceFactory } from '@backstage/backend-defaults/rootLogger';
+import { rootSystemMetadataServiceFactory } from '@backstage/backend-defaults/rootSystemMetadata';
 import { schedulerServiceFactory } from '@backstage/backend-defaults/scheduler';
 import { urlReaderServiceFactory } from '@backstage/backend-defaults/urlReader';
 import { userInfoServiceFactory } from '@backstage/backend-defaults/userInfo';
@@ -40,6 +41,7 @@ import {
   actionsRegistryServiceFactory,
   actionsServiceFactory,
   metricsServiceFactory,
+  tracingServiceFactory,
 } from '@backstage/backend-defaults/alpha';
 import { instanceMetadataServiceFactory } from './alpha/entrypoints/instanceMetadata/instanceMetadataServiceFactory';
 
@@ -61,6 +63,7 @@ export const defaultServiceFactories: ServiceFactory[] = [
   rootHttpRouterServiceFactory,
   rootLifecycleServiceFactory,
   rootLoggerServiceFactory,
+  rootSystemMetadataServiceFactory,
   schedulerServiceFactory,
   userInfoServiceFactory,
   urlReaderServiceFactory,
@@ -70,14 +73,30 @@ export const defaultServiceFactories: ServiceFactory[] = [
   actionsRegistryServiceFactory,
   actionsServiceFactory,
   metricsServiceFactory,
+  tracingServiceFactory,
 
   // Unexported alpha services kept around for compatibility reasons
   instanceMetadataServiceFactory,
 ];
 
+/** @public */
+export interface CreateBackendOptions {
+  /**
+   * The globally unique identifier of this specific Backstage backend
+   * instance.
+   *
+   * If omitted, a UUID is generated. Any provided value must not be used by
+   * any other backend instance, including after this instance has stopped.
+   */
+  instanceId?: string;
+}
+
 /**
  * @public
  */
-export function createBackend(): Backend {
-  return createSpecializedBackend({ defaultServiceFactories });
+export function createBackend(options: CreateBackendOptions = {}): Backend {
+  return createSpecializedBackend({
+    defaultServiceFactories,
+    instanceId: options.instanceId,
+  });
 }

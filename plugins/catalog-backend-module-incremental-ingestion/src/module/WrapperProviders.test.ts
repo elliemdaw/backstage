@@ -18,29 +18,31 @@ import { SchedulerService } from '@backstage/backend-plugin-api';
 import { TestDatabases, mockServices } from '@backstage/backend-test-utils';
 import { metricsServiceMock } from '@backstage/backend-test-utils/alpha';
 import { ConfigReader } from '@backstage/config';
+import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import { IncrementalEntityProvider } from '../types';
 import { WrapperProviders } from './WrapperProviders';
 
 jest.setTimeout(60_000);
 
-describe('WrapperProviders', () => {
-  const applyDatabaseMigrations = jest.fn();
-  const databases = TestDatabases.create({
-    ids: ['POSTGRES_18', 'POSTGRES_14', 'SQLITE_3', 'MYSQL_8'],
-  });
-  const config = new ConfigReader({});
-  const logger = mockServices.logger.mock();
-  const scheduler = {
-    scheduleTask: jest.fn(),
-  };
+const databases = TestDatabases.create({
+  ids: ['POSTGRES_18', 'POSTGRES_14', 'SQLITE_3', 'MYSQL_8'],
+});
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+describe.each(databases.eachSupportedId())(
+  'WrapperProviders, %p',
+  databaseId => {
+    const applyDatabaseMigrations = jest.fn();
+    const config = new ConfigReader({});
+    const logger = mockServices.logger.mock();
+    const scheduler = {
+      scheduleTask: jest.fn(),
+    };
 
-  it.each(databases.eachSupportedId())(
-    'should initialize the providers in order, %p',
-    async databaseId => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should initialize the providers in order', async () => {
       const client = await databases.init(databaseId);
 
       const provider1: IncrementalEntityProvider<number, {}> = {
@@ -71,6 +73,10 @@ describe('WrapperProviders', () => {
         applyDatabaseMigrations,
         events: mockServices.events.mock(),
         metrics: metricsServiceMock.mock(),
+        permissions: mockServices.permissions.mock({
+          authorize: async () => [{ result: AuthorizeResult.ALLOW }],
+        }),
+        httpAuth: mockServices.httpAuth(),
       });
       const wrapped1 = providers.wrap(provider1, {
         burstInterval: { seconds: 1 },
@@ -111,6 +117,6 @@ describe('WrapperProviders', () => {
           id: 'provider2',
         }),
       );
-    },
-  );
-});
+    });
+  },
+);

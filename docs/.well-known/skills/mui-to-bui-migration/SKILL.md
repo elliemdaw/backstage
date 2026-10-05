@@ -1,778 +1,126 @@
 ---
 name: mui-to-bui-migration
-description: Migrate Backstage plugins from Material-UI (MUI) to Backstage UI (BUI). Use this skill when migrating components, updating imports, replacing styling patterns, or converting MUI components to their BUI equivalents.
+description: |
+  Migrate Material-UI (MUI) to Backstage UI (BUI) with a codemod or standalone
+  guidance. Use when migrating MUI components and styles, running
+  @backstage/mui4-to-bui-migration-recipe, or resolving TODO(backstage-codemod)
+  after a BUI migration.
 ---
 
-# MUI to BUI Migration Skill
+# MUI to BUI migration
 
-This skill helps migrate Backstage plugins from Material-UI (@material-ui/core, @material-ui/icons) to Backstage UI (
-@backstage/ui).
+Support two paths through the migration: run the published _recipe_
+(`@backstage/mui4-to-bui-migration-recipe`) and finish its leftovers, or migrate
+directly using the standalone guidance. Both paths include verification.
 
-## Prerequisites
+## Workflow
 
-Before starting migration:
+### 1. Choose the path and target
 
-1. Install the BUI package:
+Honor a path the user already specified. Otherwise, ask in plain language:
 
-   ```bash
-   yarn add @backstage/ui
-   ```
+> Would you like to run the codemod and then finish its leftovers, or migrate
+> directly with the standalone guidance? I recommend the codemod because it
+> handles mechanical changes deterministically and can reduce agent token usage.
 
-2. Add the CSS import to your root file (typically `src/index.ts` or app entry point):
-   ```typescript
-   import '@backstage/ui/css/styles.css';
-   ```
+Use ordinary conversation so the choice works across agents. Wait for the answer
+before migration edits or recipe commands; a recommendation is not a selection.
+For an unattended run, require the request to specify the path.
 
-## Available BUI Components
+Identify the app or package path to migrate (for example `.` for an app root,
+or a plugin directory). If the recipe has already run, continue with its
+leftovers in step 4 without repeating it.
 
-### Layout Components
+Done when: the path and target are clear from the request or the user's answer.
 
-- `Box` - Basic layout container with CSS properties
-- `Container` - Centered content container with max-width
-- `Flex` - Flex layout component
-- `FullPage` - Full-page layout wrapper
-- `Grid` - CSS Grid-based layout (`Grid.Root`, `Grid.Item`)
+### 2. Baseline
 
-### UI Components
+Prefer a clean git tree so recipe edits are easy to review.
 
-- `Accordion` - Collapsible content panels (`Accordion`, `AccordionTrigger`, `AccordionPanel`, `AccordionGroup`)
-- `Alert` - Alert/notification banners (`status`, `title`, `description`)
-- `Avatar` - User/entity avatars
-- `Button` - Action buttons (`variant="primary"`, `variant="secondary"`, `variant="tertiary"`, `isDisabled`, `destructive`, `loading`)
-- `ButtonIcon` - Icon-only buttons (`icon`, `onPress`, `variant`)
-- `ButtonLink` - Link styled as button
-- `Card` - Content cards (`Card`, `CardHeader`, `CardBody`, `CardFooter`)
-- `Checkbox` - Checkbox input
-- `Dialog` - Modal dialogs (`DialogTrigger`, `Dialog`, `DialogHeader`, `DialogBody`, `DialogFooter`)
-- `FieldLabel` - Form field label with description and secondary label
-- `Header` - Page headers with breadcrumbs and tabs
-- `Link` - Navigation links
-- `List` - List component (`List`, `ListRow`)
-- `Menu` - Dropdown menus (`MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`, `MenuSeparator`, `SubmenuTrigger`)
-- `PasswordField` - Password input field
-- `PluginHeader` - Plugin-level header with icon, title, tabs, and actions
-- `Popover` - Popover overlays
-- `RadioGroup` - Radio button groups (`RadioGroup`, `Radio`)
-- `SearchAutocomplete` - Search input with autocomplete popover (`SearchAutocomplete`, `SearchAutocompleteItem`)
-- `SearchField` - Search input
-- `Select` - Dropdown select (single and multiple selection modes)
-- `Skeleton` - Loading skeleton
-- `Switch` - Toggle switch
-- `Table` - Data tables (with `useTable` hook for data management)
-- `TablePagination` - Standalone pagination component
-- `Tabs` - Tab navigation (`Tabs`, `TabList`, `Tab`, `TabPanel`)
-- `Tag` - Tag/chip component (replaces MUI Chip)
-- `TagGroup` - Tag/chip groups
-- `Text` - Typography component (`variant`, `color`, `weight`, `truncate`)
-- `TextField` - Text input (`isRequired`, `onChange` receives string directly)
-- `ToggleButton` - Toggle buttons
-- `ToggleButtonGroup` - Grouped toggle buttons
-- `Tooltip` - Tooltip overlays (`TooltipTrigger`, `Tooltip` — both from `@backstage/ui`)
-- `VisuallyHidden` - Accessibility helper
+Done when: `git status` is clean, or dirty files are listed and accepted as
+pre-existing.
 
-### Hooks
+### 3. Migrate using the selected path
 
-- `useBreakpoint` - Responsive breakpoint hook
-- `useTable` - Table data management hook (supports `complete`, `offset`, and `cursor` pagination modes)
+#### Codemod path
 
-## Migration Patterns
+Use the published registry recipe. Maintainers testing an unpublished recipe:
+follow local-run instructions in the
+[codemods repository](https://github.com/backstage/codemods) instead of the
+commands below.
 
-### 1. Import Changes
+Replace `<path-to-app-or-package>` with the agreed target. Dry-run first:
 
-**Remove MUI imports:**
-
-```typescript
-// REMOVE these imports
-import { Box, Typography, Tooltip, Paper } from '@material-ui/core';
-import { makeStyles, Theme } from '@material-ui/core/styles';
-import SomeIcon from '@material-ui/icons/SomeIcon';
+```shell
+yarn dlx codemod run @backstage/mui4-to-bui-migration-recipe \
+  --target <path-to-app-or-package> \
+  --dry-run
 ```
 
-**Add BUI imports:**
+Always dry-run the target before apply. The summary surfaces scope and metrics
+(for example Button `outlined` → `secondary`).
 
-```typescript
-// ADD these imports
-import { Box, Flex, Text, Tooltip, Card } from '@backstage/ui';
-import { RiSomeIcon } from '@remixicon/react';
-import styles from './MyComponent.module.css';
+After a successful dry-run, note the expected changes and TODOs. If the user
+requested only a dry-run, report its results and stop before applying. If no
+files match, continue to step 4. Otherwise, apply:
+
+```shell
+yarn dlx codemod run @backstage/mui4-to-bui-migration-recipe \
+  --target <path-to-app-or-package>
 ```
 
-### 2. Styling: `makeStyles` to CSS Modules
+Run only the full recipe so bootstrap → transforms → `remove-mui-dependencies`
+stay in order (cleanup last).
 
-Create a `.module.css` file alongside your component using BUI CSS variables.
+Ordered package list and heuristics:
+[mui4-to-bui-migration-recipe README](https://github.com/backstage/codemods/tree/main/codemods/misc/mui4-to-bui-migration-recipe).
 
-**Before (MUI `makeStyles`):**
+If either command fails, report the failure and inspect any partial changes
+before retrying. Keep the selected path unless the user chooses to switch.
 
-```typescript
-// MyComponent.tsx
-import {makeStyles, Theme} from '@material-ui/core/styles';
+Done when: dry-run and apply finished for the agreed target with no recipe CLI
+failure, or the dry-run confirmed no matching files.
 
-const useStyles = makeStyles((theme: Theme) => ({
-  container: {
-    padding: theme.spacing(2),
-    backgroundColor: theme.palette.background.paper,
-    borderRadius: theme.shape.borderRadius,
-  },
-  title: {
-    marginBottom: theme.spacing(1),
-    color: theme.palette.text.primary,
-  },
-  listItem: {
-    display: 'flex',
-    alignItems: 'center',
-  },
-  icon: {
-    minWidth: 56,
-    color: theme.palette.text.secondary,
-  },
-}));
+#### Standalone path
 
-function MyComponent() {
-  const classes = useStyles();
-  return (
-    <div className = {classes.container} >
-    <Typography className = {classes.title} > Title < /Typography>
-      < div
-  className = {classes.listItem} >
-  <div className = {classes.icon} >
-    <SomeIcon / >
-    </div>
-    < span > Content < /span>
-    < /div>
-    < /div>
-)
-  ;
-}
-```
+Read [standalone migration](references/standalone-migration.md) only when the
+user selects this path. Follow its dependency setup, component examples, styling
+guidance, and cleanup checklist to edit the target directly. This path requires
+no codemod installation, dry-run, or apply command.
 
-**After (CSS Modules with BUI variables):**
+Done when: the standalone checklist is complete for the agreed target, with
+remaining MUI usage recorded for step 4.
 
-```css
-/* MyComponent.module.css */
-@layer components {
-  .container {
-    padding: var(--bui-space-4);
-    background-color: var(--bui-bg-neutral-1);
-    border-radius: var(--bui-radius-2);
-  }
+### 4. Resolve remaining migration work
 
-  .title {
-    margin-bottom: var(--bui-space-2);
-    color: var(--bui-fg-primary);
-  }
+1. Search the target for `TODO(backstage-codemod)`. Resolve each marker, or defer with an
+   explicit reason.
+1. Search for remaining `@material-ui/` and `@mui/` imports and styling usage.
+1. Read [migration limits](references/out-of-scope.md) when a component or pattern
+   has no equivalent that preserves its behavior.
+1. After a codemod run, read [leftover cleanup](references/leftover-cleanup.md)
+   when finishing tokens, icons, or ambiguous layout. Load this reference only
+   for recipe output.
 
-  .listItem {
-    display: flex;
-    align-items: center;
-    padding: var(--bui-space-2) 0;
-  }
+Use the recipe README to interpret recipe output. For direct edits in either
+path, check the target's installed BUI APIs and preserve existing behavior.
 
-  .icon {
-    min-width: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--bui-fg-secondary);
-  }
-}
-```
+Done when: every migration marker and remaining MUI use in scope is resolved or
+documented with a reason for retaining it. Keep dependencies needed by retained
+components, styles, or icons.
 
-```typescript
-// MyComponent.tsx
-import {Box, Text} from '@backstage/ui';
-import {RiSomeIcon} from '@remixicon/react';
-import styles from './MyComponent.module.css';
+### 5. Verify
 
-function MyComponent() {
-  return (
-    <Box className = {styles.container} >
-    <Text className = {styles.title} > Title < /Text>
-      < div
-  className = {styles.listItem} >
-  <div className = {styles.icon} >
-  <RiSomeIcon size = {24}
-  />
-  < /div>
-  < span > Content < /span>
-  < /div>
-  < /Box>
-)
-  ;
-}
-```
+- Follow the target repository's setup instructions before checks. In a Backstage
+  monorepo, run `yarn install` and `yarn tsc` from the root.
+- Run targeted tests and lint checks using the repository's prescribed commands.
+- Spot-check UI in light and dark mode where styles changed.
 
-### 3. Layout: Box with display to `Flex`
+Done when: the required checks pass and changed UI behavior and appearance have
+been checked. Report any unavailable or failing check as incomplete verification.
 
-**Before (MUI Box with display prop):**
+## Success criteria
 
-```typescript
-<Box
-  display = "flex"
-flexDirection = "column"
-alignItems = "center"
-justifyContent = "space-between"
->
-<Box display = "flex"
-flexDirection = "row"
-gap = {2} >
-  {children}
-  < /Box>
-  < /Box>
-```
-
-**After (BUI `Flex` component):**
-
-```typescript
-<Flex direction = "column"
-align = "center"
-justify = "between" >
-<Flex direction = "row"
-style = {
-{
-  gap: 'var(--bui-space-4)'
-}
-}>
-{
-  children
-}
-</Flex>
-< /Flex>
-```
-
-Note: BUI `Flex` uses `justify="between"` not `justify="space-between"`.
-
-### 4. Grid Layout
-
-**Before (MUI Grid):**
-
-```typescript
-<Grid container
-spacing = {3} >
-  <Grid item
-xs = {12}
-md = {6} >
-  {content}
-  < /Grid>
-  < /Grid>
-```
-
-**After (BUI Grid):**
-
-```typescript
-<Grid.Root columns = {
-{
-  sm: '12'
-}
-}
-gap = "6" >
-<Grid.Item colSpan = {
-{
-  sm: '12', md
-:
-  '6'
-}
-}>
-{
-  content
-}
-</Grid.Item>
-< /Grid.Root>
-```
-
-### 5. Typography to Text
-
-**Before (MUI Typography):**
-
-```typescript
-<Typography variant = "h1" > Heading < /Typography>
-  < Typography
-variant = "h6" > Subheading < /Typography>
-  < Typography
-variant = "body1" > Body
-text < /Typography>
-< Typography
-variant = "body2"
-color = "textSecondary" > Secondary
-text < /Typography>
-```
-
-**After (BUI Text):**
-
-```typescript
-<Text variant = "title-large" > Heading < /Text>
-  < Text
-variant = "title-small" > Subheading < /Text>
-  < Text
-variant = "body-medium" > Body
-text < /Text>
-< Text
-variant = "body-small"
-color = "secondary" > Secondary
-text < /Text>
-```
-
-Valid Text variants: `title-large`, `title-medium`, `title-small`, `title-x-small`, `body-large`, `body-medium`,
-`body-small`, `body-x-small`
-
-### 6. Tooltip Pattern
-
-**Before (MUI Tooltip):**
-
-```typescript
-import {Tooltip, Typography} from '@material-ui/core';
-
-<Tooltip title = { < Typography > Tooltip
-content < /Typography>}>
-< span > Hover
-me < /span>
-< /Tooltip>;
-```
-
-**After (BUI TooltipTrigger pattern):**
-
-```typescript
-import { Tooltip, TooltipTrigger, Text } from '@backstage/ui';
-
-<TooltipTrigger>
-  <Text>Hover me</Text>
-  <Tooltip>Tooltip content</Tooltip>
-</TooltipTrigger>;
-```
-
-### 7. Dialog Pattern
-
-**Before (MUI Dialog):**
-
-```typescript
-import {Dialog, DialogTitle, DialogActions, Button} from '@material-ui/core';
-
-<Dialog open = {isOpen}
-onClose = {onClose} >
-<DialogTitle>Title < /DialogTitle>
-< DialogActions >
-<Button onClick = {onClose} > Cancel < /Button>
-  < Button
-onClick = {onConfirm}
-color = "primary" >
-  Confirm
-  < /Button>
-  < /DialogActions>
-  < /Dialog>;
-```
-
-**After (BUI Dialog):**
-
-```typescript
-import {
-  Dialog,
-  DialogTrigger,
-  DialogHeader,
-  DialogFooter,
-  Button,
-} from '@backstage/ui';
-
-<DialogTrigger>
-  <Dialog
-    isOpen = {isOpen}
-isDismissable
-onOpenChange = {open
-=>
-{
-  if (!open) onClose();
-}
-}
->
-<DialogHeader>Title < /DialogHeader>
-< DialogFooter >
-<Button onClick = {onConfirm}
-variant = "primary" >
-  Confirm
-  < /Button>
-  < Button
-onClick = {onClose}
-variant = "secondary"
-slot = "close" >
-  Cancel
-  < /Button>
-  < /DialogFooter>
-  < /Dialog>
-  < /DialogTrigger>;
-```
-
-### 8. Button Changes
-
-**Before (MUI Button):**
-
-```typescript
-<Button variant = "contained"
-color = "primary"
-disabled = {loading}
-onClick = {handleClick} >
-  Submit
-  < /Button>
-  < IconButton
-onClick = {handleDelete}
-disabled = {!
-canDelete
-}>
-<DeleteIcon / >
-</IconButton>
-```
-
-**After (BUI Button):**
-
-```typescript
-<Button variant = "primary"
-isDisabled = {loading}
-onClick = {handleClick} >
-  Submit
-  < /Button>
-  < ButtonIcon
-aria - label = "delete"
-isDisabled = {!
-canDelete
-}
-onPress = {handleDelete}
-icon = { < RiDeleteBinLine
-size = {16}
-/>}
-variant = "secondary"
-  / >
-```
-
-### 9. TextField Changes
-
-**Before (MUI TextField):**
-
-```typescript
-<TextField
-  required
-  name="title"
-  label="Title"
-  value={value}
-  onChange={e => setValue(e.target.value)}
-  fullWidth
-/>
-```
-
-**After (BUI TextField):**
-
-```typescript
-<TextField
-  isRequired
-  id="title"
-  label="Title"
-  value={value}
-  onChange={newValue => setValue(newValue)} // receives string directly!
-/>
-```
-
-Note: BUI TextField `onChange` receives the string value directly, not an event object.
-
-### 10. Tabs Pattern
-
-**Before (MUI Tabs):**
-
-```typescript
-import {Tab} from '@material-ui/core';
-import {TabContext, TabList, TabPanel} from '@material-ui/lab';
-
-<TabContext value = {tab} >
-<TabList onChange = {handleChange} >
-<Tab label = "Tab 1"
-value = "tab1" / >
-<Tab label = "Tab 2"
-value = "tab2" / >
-  </TabList>
-  < TabPanel
-value = "tab1" > Content
-1 < /TabPanel>
-< TabPanel
-value = "tab2" > Content
-2 < /TabPanel>
-< /TabContext>;
-```
-
-**After (BUI Tabs):**
-
-```typescript
-import {Tabs, TabList, Tab, TabPanel} from '@backstage/ui';
-
-<Tabs defaultSelectedKey = "tab1" >
-<TabList>
-  <Tab id = "tab1" > Tab
-1 < /Tab>
-< Tab
-id = "tab2" > Tab
-2 < /Tab>
-< /TabList>
-< TabPanel
-id = "tab1" > Content
-1 < /TabPanel>
-< TabPanel
-id = "tab2" > Content
-2 < /TabPanel>
-< /Tabs>;
-```
-
-### 11. Menu Pattern
-
-**Before (MUI Menu):**
-
-```typescript
-import {IconButton, Popover, MenuList, MenuItem} from '@material-ui/core';
-import MoreVertIcon from '@material-ui/icons/MoreVert';
-
-<IconButton onClick = {handleOpen} > <MoreVertIcon / > </IconButton>
-  < Popover
-open = {open}
-anchorEl = {anchorEl}
-onClose = {handleClose} >
-<MenuList>
-  <MenuItem onClick = {handleAction} > Action < /MenuItem>
-  < /MenuList>
-  < /Popover>
-```
-
-**After (BUI Menu):**
-
-```typescript
-import {ButtonIcon, Menu, MenuItem, MenuTrigger} from '@backstage/ui';
-import {RiMore2Line} from '@remixicon/react';
-
-<MenuTrigger>
-  <ButtonIcon aria - label = "more"
-icon = { < RiMore2Line / >
-}
-variant = "secondary" / >
-<Menu>
-  <MenuItem onAction = {handleAction} > Action < /MenuItem>
-  < /Menu>
-  < /MenuTrigger>;
-```
-
-### 12. List to BUI List
-
-**Before (MUI List):**
-
-```typescript
-import { List, ListItem, ListItemIcon, ListItemText } from '@material-ui/core';
-
-<List>
-  <ListItem>
-    <ListItemIcon>
-      <SomeIcon />
-    </ListItemIcon>
-    <ListItemText primary="Title" secondary="Description" />
-  </ListItem>
-</List>;
-```
-
-**After (BUI List):**
-
-```typescript
-import { List, ListRow } from '@backstage/ui';
-import { RiSomeIcon } from '@remixicon/react';
-
-<List>
-  <ListRow icon={<RiSomeIcon size={20} />} description="Description">
-    Title
-  </ListRow>
-</List>;
-```
-
-Note: `ListRow` supports `icon`, `description`, `menuItems`, and `customActions` props.
-
-### 13. Chip to Tag
-
-**Before (MUI Chip):**
-
-```typescript
-import { Chip } from '@material-ui/core';
-
-<Chip label="Category" size="small" />;
-```
-
-**After (BUI Tag):**
-
-```typescript
-import {Tag} from '@backstage/ui';
-
-<Tag size = "small" > Category < /Tag>;
-```
-
-### 14. Alert Pattern
-
-**Before (MUI Alert):**
-
-```typescript
-import { Alert, AlertTitle } from '@material-ui/lab';
-
-<Alert severity="error">
-  <AlertTitle>Error</AlertTitle>
-  Something went wrong.
-</Alert>;
-```
-
-**After (BUI Alert):**
-
-```typescript
-import { Alert } from '@backstage/ui';
-
-<Alert
-  status="danger"
-  icon
-  title="Error"
-  description="Something went wrong."
-/>;
-```
-
-Status mapping: `severity="error"` → `status="danger"`, `severity="warning"` → `status="warning"`,
-`severity="info"` → `status="info"`, `severity="success"` → `status="success"`.
-
-Set `icon` to `true` for automatic status icons, or pass a custom `ReactElement`.
-Use `loading` for a loading spinner, and `customActions` for action buttons.
-
-### 15. Icons: MUI Icons to Remix Icons
-
-**Before (MUI Icons):**
-
-```typescript
-import CloseIcon from '@material-ui/icons/Close';
-import SearchIcon from '@material-ui/icons/Search';
-
-<CloseIcon / >
-<SearchIcon fontSize = "small" / >
-```
-
-**After (Remix Icons):**
-
-```typescript
-import {RiCloseLine, RiSearchLine} from '@remixicon/react';
-
-<RiCloseLine / >
-<RiSearchLine size = {16}
-/>
-```
-
-Common icon mappings:
-
-| MUI Icon          | Remix Icon           |
-| ----------------- | -------------------- |
-| `Close`           | `RiCloseLine`        |
-| `Search`          | `RiSearchLine`       |
-| `Settings`        | `RiSettingsLine`     |
-| `Add`             | `RiAddLine`          |
-| `Delete`          | `RiDeleteBinLine`    |
-| `Edit`            | `RiEditLine`         |
-| `Check`           | `RiCheckLine`        |
-| `Error`           | `RiErrorWarningLine` |
-| `Warning`         | `RiAlertLine`        |
-| `Info`            | `RiInformationLine`  |
-| `ExpandMore`      | `RiArrowDownSLine`   |
-| `ExpandLess`      | `RiArrowUpSLine`     |
-| `ChevronRight`    | `RiArrowRightSLine`  |
-| `ChevronLeft`     | `RiArrowLeftSLine`   |
-| `Menu`            | `RiMenuLine`         |
-| `MoreVert`        | `RiMore2Line`        |
-| `Visibility`      | `RiEyeLine`          |
-| `VisibilityOff`   | `RiEyeOffLine`       |
-| `NewReleases`     | `RiMegaphoneLine`    |
-| `RecordVoiceOver` | `RiMegaphoneLine`    |
-| `Description`     | `RiFileTextLine`     |
-
-Find more icons at: https://remixicon.com/
-
-## CSS Variable Reference
-
-### Spacing
-
-| MUI theme.spacing()  | BUI CSS Variable     |
-| -------------------- | -------------------- |
-| `theme.spacing(0.5)` | `var(--bui-space-1)` |
-| `theme.spacing(1)`   | `var(--bui-space-2)` |
-| `theme.spacing(1.5)` | `var(--bui-space-3)` |
-| `theme.spacing(2)`   | `var(--bui-space-4)` |
-| `theme.spacing(3)`   | `var(--bui-space-6)` |
-| `theme.spacing(4)`   | `var(--bui-space-8)` |
-
-### Colors
-
-| MUI theme.palette    | BUI CSS Variable                           |
-| -------------------- | ------------------------------------------ |
-| `text.primary`       | `var(--bui-fg-primary)`                    |
-| `text.secondary`     | `var(--bui-fg-secondary)`                  |
-| `background.paper`   | `var(--bui-bg-neutral-1)`                  |
-| `background.default` | `var(--bui-bg-app)`                        |
-| `primary.main`       | `var(--bui-bg-solid)` or `var(--bui-ring)` |
-| `error.main`         | `var(--bui-fg-danger)`                     |
-| `action.hover`       | `var(--bui-bg-neutral-1-hover)`            |
-| `divider`            | `var(--bui-border-1)`                      |
-
-### Typography
-
-| Property            | BUI CSS Variable                 |
-| ------------------- | -------------------------------- |
-| Font family         | `var(--bui-font-regular)`        |
-| Font size small     | `var(--bui-font-size-1)`         |
-| Font size medium    | `var(--bui-font-size-2)`         |
-| Font size large     | `var(--bui-font-size-3)`         |
-| Font weight regular | `var(--bui-font-weight-regular)` |
-| Font weight bold    | `var(--bui-font-weight-bold)`    |
-
-### Other
-
-| Property             | BUI CSS Variable         |
-| -------------------- | ------------------------ |
-| Border radius small  | `var(--bui-radius-2)`    |
-| Border radius medium | `var(--bui-radius-3)`    |
-| Border radius full   | `var(--bui-radius-full)` |
-| Link color           | `var(--bui-fg-info)`     |
-
-## Known Limitations
-
-Some Backstage APIs still require MUI-compatible icon types:
-
-- **NavItemBlueprint** (`@backstage/frontend-plugin-api`): The `icon` prop expects MUI `IconComponent` type. Remix icons
-  are not type-compatible.
-- **Timeline** (`@material-ui/lab`): No BUI equivalent exists.
-
-For these cases, keep using MUI components.
-
-## Migration Checklist
-
-When migrating a plugin:
-
-1. [ ] Add `@backstage/ui` dependency
-2. [ ] Add `@remixicon/react` dependency (if using icons)
-3. [ ] Add CSS import to root file
-4. [ ] Remove `@material-ui/core` imports (except components with no BUI equivalent)
-5. [ ] Remove `@material-ui/icons` imports
-6. [ ] Remove `@material-ui/lab` imports (Alert, Pagination now in BUI)
-7. [ ] Remove `makeStyles` and related imports
-8. [ ] Create `.module.css` files for component styles
-9. [ ] Replace `Typography` with `Text`
-10. [ ] Replace `Box display="flex"` with `Flex`
-11. [ ] Replace `Grid container/item` with `Grid.Root/Grid.Item`
-12. [ ] Replace `Paper` with `Card`
-13. [ ] Replace MUI `Dialog` with BUI `DialogTrigger` pattern
-14. [ ] Replace MUI `Tooltip` with BUI `TooltipTrigger` pattern (both from `@backstage/ui`)
-15. [ ] Replace MUI `Tabs` with BUI `Tabs`
-16. [ ] Replace MUI `Menu` with BUI `MenuTrigger` pattern
-17. [ ] Replace `Chip` with `Tag`
-18. [ ] Replace `IconButton` with `ButtonIcon`
-19. [ ] Replace MUI `Alert` with BUI `Alert`
-20. [ ] Replace MUI `List` with BUI `List` and `ListRow`
-21. [ ] Update `Button` props (`disabled` → `isDisabled`, `variant="contained"` → `variant="primary"`)
-22. [ ] Update `TextField` props (`required` → `isRequired`, `onChange` signature)
-23. [ ] Replace MUI icons with Remix icons
-24. [ ] Run `yarn tsc` to check for type errors
-25. [ ] Run `yarn build` to verify build
-26. [ ] Run `yarn lint` to check for missing dependencies
-27. [ ] Test component rendering and functionality
-
-## Reference
-
-- BUI Documentation: https://ui.backstage.io
-- Remix Icons: https://remixicon.com/
-- Example Migration PR: https://github.com/backstage/backstage/pull/31631
+Migration is complete when the selected path is finished for the agreed target,
+remaining work is accounted for in step 4, and verification passes. Summarize the
+selected path, changed files, retained MUI usage and reasons, and check results.

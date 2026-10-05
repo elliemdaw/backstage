@@ -22,9 +22,28 @@ import {
 import { z } from 'zod/v3';
 import { fromZodError } from 'zod-validation-error/v3';
 import { QueryEntitiesByPredicateRequest } from '../../schema/openapi/generated/models/QueryEntitiesByPredicateRequest.model';
-import { EntityOrder } from '../../catalog/types';
+import { EntityOrder, TotalItemsMode } from '../../catalog/types';
 import { Cursor } from '../../catalog/types';
 import { decodeCursor } from '../util';
+
+const TOTAL_ITEMS_MODES: TotalItemsMode[] = ['include', 'exclude'];
+
+function parseTotalItems(value: unknown): TotalItemsMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    typeof value !== 'string' ||
+    !TOTAL_ITEMS_MODES.includes(value as TotalItemsMode)
+  ) {
+    throw new InputError(
+      `Invalid totalItems value "${value}", expected one of: ${TOTAL_ITEMS_MODES.join(
+        ', ',
+      )}`,
+    );
+  }
+  return value as TotalItemsMode;
+}
 
 const filterPredicateSchema = createZodV3FilterPredicateSchema(z);
 
@@ -61,12 +80,13 @@ export type ParsedEntityQuery =
       limit?: number;
     }
   | {
-      query?: FilterPredicate;
+      filter?: FilterPredicate;
       orderFields?: EntityOrder[];
       fullTextFilter?: { term: string; fields?: string[] };
       fields?: string[];
       limit?: number;
       offset?: number;
+      totalItems?: TotalItemsMode;
     };
 
 export function parseEntityQuery(
@@ -98,9 +118,10 @@ export function parseEntityQuery(
   }
 
   const orderFields = parseOrderFields(request.orderBy);
+  const totalItemsMode = parseTotalItems(request.totalItems);
 
   return {
-    query,
+    filter: query,
     orderFields,
     fullTextFilter: request.fullTextFilter
       ? {
@@ -111,5 +132,6 @@ export function parseEntityQuery(
     fields: request.fields,
     limit: request.limit,
     offset: request.offset,
+    ...(totalItemsMode !== undefined && { totalItems: totalItemsMode }),
   };
 }

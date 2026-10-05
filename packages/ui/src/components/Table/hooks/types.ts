@@ -59,6 +59,12 @@ export interface PaginationOptions
       | 'showPaginationLabel'
     >
   > {
+  /**
+   * The zero-based item offset to use for the initial page.
+   *
+   * In complete mode, the offset is adjusted to the last available page if
+   * the data later becomes too short for the current page.
+   */
   initialOffset?: number;
 }
 
@@ -111,8 +117,25 @@ export type UseTableCompleteOptions<
   sortFn?: (data: T[], sort: SortDescriptor) => T[];
   filterFn?: (data: T[], filter: TFilter) => T[];
   searchFn?: (data: T[], search: string) => T[];
+  /**
+   * Trailing-edge debounce delay (ms) applied to the search value before it
+   * reaches `searchFn`. Defaults to `0` — no debounce, no extra render. The
+   * controlled `search` / `onSearchChange` surface is unaffected.
+   */
+  searchDebounceMs?: number;
+  /**
+   * Trailing-edge debounce delay (ms) applied to the filter value before it
+   * reaches `filterFn`. Defaults to `0` — no debounce, no extra render. The
+   * controlled `filter` / `onFilterChange` surface is unaffected.
+   */
+  filterDebounceMs?: number;
 } & (
     | {
+        /**
+         * Controlled table data. Set to `undefined` while loading new data;
+         * the previous data and pagination metadata remain visible and are
+         * reported as stale.
+         */
         data: T[] | undefined;
         getData?: never;
       }
