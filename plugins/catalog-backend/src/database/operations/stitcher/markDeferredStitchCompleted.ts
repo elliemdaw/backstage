@@ -16,28 +16,41 @@
 
 import { Knex } from 'knex';
 import { DbStitchQueueRow } from '../../tables';
+import { StitchLeaseExpiresAt } from './getDeferredStitchableEntities';
 
 /**
  * Marks a single entity as having been stitched.
  *
  * @remarks
  *
- * This assumes that the stitching strategy is set to deferred.
+ * If the ticket and captured lease still match, the stitch_queue entry is
+ * deleted — no further stitching is needed. Both guards are needed during
+ * mixed-version rollouts: old workers reclaim without replacing the ticket.
  *
- * The row is only deleted from stitch_queue if the ticket hasn't changed. If
- * it has, it means that a new stitch request has been made, and the entity
- * should be stitched once more some time in the future - or is indeed already
- * being stitched concurrently with ourselves.
+ * A changed ticket with the same lease means a new request arrived during this
+ * attempt. Make it immediately eligible, whether this attempt succeeded or was
+ * abandoned. A changed lease belongs to a successor and must not be disturbed.
+ * The captured lease is opaque and must be passed through unchanged from
+ * getDeferredStitchableEntities, not reconstructed from a Date or ISO string.
  */
 export async function markDeferredStitchCompleted(option: {
   knex: Knex | Knex.Transaction;
   entityRef: string;
   stitchTicket: string;
+  stitchLeaseExpiresAt: StitchLeaseExpiresAt;
 }): Promise<void> {
-  const { knex, entityRef, stitchTicket } = option;
+  const { knex, entityRef, stitchTicket, stitchLeaseExpiresAt } = option;
 
-  await knex<DbStitchQueueRow>('stitch_queue')
+  const deleted = await knex<DbStitchQueueRow>('stitch_queue')
     .where('entity_ref', '=', entityRef)
     .andWhere('stitch_ticket', '=', stitchTicket)
+    .andWhere('next_stitch_at', '=', stitchLeaseExpiresAt)
     .delete();
+
+  if (!deleted) {
+    await knex<DbStitchQueueRow>('stitch_queue')
+      .where('entity_ref', '=', entityRef)
+      .where('next_stitch_at', '=', stitchLeaseExpiresAt)
+      .update({ next_stitch_at: knex.fn.now() });
+  }
 }

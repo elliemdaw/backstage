@@ -713,7 +713,7 @@ template. These follow the same standard format:
       name: ${{ parameters.name }}
 ```
 
-:::warning Action ID Naming
+:::warning[Action ID Naming]
 
 When using custom actions, **use camelCase for action IDs** to avoid issues with template expressions. Action IDs with dashes will cause expressions like `${{ steps.my-action.output.value }}` to return `NaN` instead of the expected value.
 
@@ -725,7 +725,8 @@ By default we ship some [built in actions](./builtin-actions.md) that you can
 take a look at, or you can
 [create your own custom actions](./writing-custom-actions.md).
 
-When `each` is provided, the current iteration value is available in the `${{ each }}` input.
+The `each` value must resolve to an array or object. The current iteration value
+is available in the `${{ each }}` input.
 
 Examples:
 
@@ -745,6 +746,75 @@ input:
 ```
 
 When `each` is used, the outputs of a repeated step are returned as an array of outputs from each iteration.
+
+### Status Check Functions - `always()` and `failure()`
+
+By default, when a step fails during a scaffolder run, all subsequent steps are skipped and the task is marked as failed. This can be problematic when your template creates external resources (repositories, cloud infrastructure, deployments) that need to be cleaned up if a later step fails.
+
+Status check functions give you control over which steps run even after a failure. You use them inside a `${{ ... }}` template expression in the `if` field of a step.
+
+| Function    | Description                                                                  |
+| ----------- | ---------------------------------------------------------------------------- |
+| `always()`  | Always runs the step, regardless of whether previous steps passed or failed. |
+| `failure()` | Runs the step only when a previous step has failed.                          |
+
+These functions must be used as template expressions such as `${{ always() }}` or `${{ failure() }}`.
+
+After a step has failed, the scaffolder only attempts later steps whose `if` expression invokes one of these status check functions.
+
+#### Usage
+
+```yaml
+steps:
+  - id: cleanup
+    name: Cleanup Resources
+    action: my:cleanup:action
+    if: ${{ always() }}
+```
+
+#### Example: Cleanup on failure
+
+A common pattern is to create resources in early steps and add cleanup steps
+that only run if something goes wrong:
+
+```yaml
+steps:
+  - id: create-repo
+    name: Create Repository
+    action: publish:github
+    input:
+      repoUrl: ${{ parameters.repoUrl }}
+
+  - id: deploy
+    name: Deploy to Kubernetes
+    action: deploy:kubernetes
+    input:
+      manifest: ./k8s/deployment.yaml
+
+  # Only runs when a previous step failed — cleans up the repository
+  - id: cleanup-repo
+    name: Delete Repository
+    action: github:repo:delete
+    if: ${{ failure() }}
+    input:
+      repoUrl: ${{ parameters.repoUrl }}
+
+  # Always runs — post an audit event regardless of outcome
+  - id: audit
+    name: Post Audit Event
+    action: debug:log
+    if: ${{ always() }}
+    input:
+      message: 'Scaffolder run completed for ${{ parameters.repoUrl }}'
+
+  # Does not run after a failure, because it does not invoke a status check function
+  - id: plain-truthy-condition
+    name: Plain Truthy Condition
+    action: debug:log
+    if: ${{ true }}
+    input:
+      message: 'This step is skipped after a previous failure'
+```
 
 ## Outputs
 
@@ -844,8 +914,10 @@ spec:
 ```
 
 Afterwards, if you are using the builtin templating action, you can start using
-the variables in your code. You can use also any other templating functions from
-[Nunjucks](https://mozilla.github.io/nunjucks/templating.html#tags) as well.
+the variables in your code. You can also use the template tags and functions
+supported by [Nunjitsu](https://github.com/Rugvip/nunjitsu). Check the
+[Nunjitsu compatibility guide](https://github.com/Rugvip/nunjitsu/blob/main/docs/compatibility.md)
+before using syntax from the Nunjucks documentation.
 
 ```bash
 #!/bin/bash
@@ -865,9 +937,12 @@ code part of the `JSONSchema`, or you can read more about our
 ### More about expressions
 
 The `${{ }}` constructs in your template are evaluated using the
-powerful [Nunjucks templating engine](https://mozilla.github.io/nunjucks/).
-To learn more about basic Nunjucks templating please see
-[templating documentation](https://mozilla.github.io/nunjucks/templating.html).
+[Nunjitsu template engine](https://github.com/Rugvip/nunjitsu), which supports a
+focused subset of Nunjucks syntax. Use the
+[Nunjucks templating documentation](https://mozilla.github.io/nunjucks/templating.html)
+as a general syntax reference, and check the
+[Nunjitsu compatibility guide](https://github.com/Rugvip/nunjitsu/blob/main/docs/compatibility.md)
+for the supported features.
 
 Information about Backstage's built-in templating extensions, as well as how to
 create your own customizations, may be found at

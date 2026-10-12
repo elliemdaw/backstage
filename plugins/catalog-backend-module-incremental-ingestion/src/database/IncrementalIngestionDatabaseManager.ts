@@ -34,6 +34,17 @@ export class IncrementalIngestionDatabaseManager {
     this.client = options.client;
   }
 
+  private whereInArray(column: string, values: string[]) {
+    const isPg = this.client.client.config.client === 'pg';
+    return (qb: Knex.QueryBuilder) => {
+      if (isPg) {
+        qb.whereRaw('?? = ANY(?)', [column, values]);
+      } else {
+        qb.whereIn(column, values);
+      }
+    };
+  }
+
   /**
    * Performs an update to the ingestion record with matching `id`.
    * @param options - IngestionRecordUpdate
@@ -76,24 +87,25 @@ export class IncrementalIngestionDatabaseManager {
     tx: Knex.Transaction,
     ids: { id: string }[],
   ) {
-    const chunks: { id: string }[][] = [];
-    for (let i = 0; i < ids.length; i += 100) {
-      const chunk = ids.slice(i, i + 100);
-      chunks.push(chunk);
+    if (ids.length === 0) {
+      return 0;
+    }
+
+    const allIds = ids.map(entry => entry.id);
+
+    if (this.client.client.config.client === 'pg') {
+      return await tx('ingestion_mark_entities')
+        .delete()
+        .modify(this.whereInArray('id', allIds));
     }
 
     let deleted = 0;
-
-    for (const chunk of chunks) {
-      const chunkDeleted = await tx('ingestion_mark_entities')
+    for (let i = 0; i < allIds.length; i += 100) {
+      const chunk = allIds.slice(i, i + 100);
+      deleted += await tx('ingestion_mark_entities')
         .delete()
-        .whereIn(
-          'id',
-          chunk.map(entry => entry.id),
-        );
-      deleted += chunkDeleted;
+        .whereIn('id', chunk);
     }
-
     return deleted;
   }
 
@@ -175,33 +187,6 @@ export class IncrementalIngestionDatabaseManager {
   }
 
   /**
-   * Automatically cleans up duplicate ingestion records if they were accidentally created.
-   * Any ingestion record where the `rest_completed_at` is null (meaning it is active) AND
-   * the ingestionId is incorrect is a duplicate ingestion record.
-   * @param ingestionId - string
-   * @param provider - string
-   */
-  async clearDuplicateIngestions(ingestionId: string, provider: string) {
-    await this.client.transaction(async tx => {
-      const invalid = await tx<IngestionRecord>('ingestions')
-        .where('provider_name', provider)
-        .andWhere('rest_completed_at', null)
-        .andWhereNot('id', ingestionId);
-
-      if (invalid.length > 0) {
-        await tx('ingestions').delete().whereIn('id', invalid);
-        await tx('ingestion_mark_entities')
-          .delete()
-          .whereIn(
-            'ingestion_mark_id',
-            tx('ingestion_marks').select('id').whereIn('ingestion_id', invalid),
-          );
-        await tx('ingestion_marks').delete().whereIn('ingestion_id', invalid);
-      }
-    });
-  }
-
-  /**
    * This method fully purges and resets all ingestion records for the named provider, and
    * leaves it in a paused state.
    * @param provider - string
@@ -271,12 +256,22 @@ export class IncrementalIngestionDatabaseManager {
 
   /**
    * This method is used to remove entity records from the ingestion_mark_entities
-   * table by their entity reference.
+   * table by their entity reference, scoped to a single source_key.
    */
-  async deleteEntityRecordsByRef(entities: { entityRef: string }[]) {
+  async deleteEntityRecordsByRef(
+    sourceKey: string,
+    entities: { entityRef: string }[],
+  ) {
+    if (entities.length === 0) {
+      return;
+    }
+
     const refs = entities.map(e => e.entityRef);
     await this.client.transaction(async tx => {
-      await tx('ingestion_mark_entities').delete().whereIn('ref', refs);
+      await tx('ingestion_mark_entities')
+        .delete()
+        .where('source_key', sourceKey)
+        .modify(this.whereInArray('entity_ref', refs));
     });
   }
 
@@ -313,7 +308,7 @@ export class IncrementalIngestionDatabaseManager {
     const previousIngestion = await this.getPreviousIngestionRecord(provider);
     return await this.client.transaction(async tx => {
       const count = await tx('ingestion_mark_entities')
-        .count({ total: 'ingestion_mark_entities.ref' })
+        .count({ total: 'ingestion_mark_entities.entity_ref' })
         .join(
           'ingestion_marks',
           'ingestion_marks.id',
@@ -326,8 +321,10 @@ export class IncrementalIngestionDatabaseManager {
 
       const removed: { entityRef: string }[] = [];
       if (previousIngestion) {
-        const stale: { ref: string }[] = await tx('ingestion_mark_entities')
-          .select('ingestion_mark_entities.ref')
+        const stale: { entity_ref: string }[] = await tx(
+          'ingestion_mark_entities',
+        )
+          .select('ingestion_mark_entities.entity_ref')
           .join(
             'ingestion_marks',
             'ingestion_marks.id',
@@ -336,8 +333,8 @@ export class IncrementalIngestionDatabaseManager {
           .join('ingestions', 'ingestions.id', 'ingestion_marks.ingestion_id')
           .where('ingestions.id', previousIngestion.id);
 
-        for (const entityRef of stale) {
-          removed.push({ entityRef: entityRef.ref });
+        for (const row of stale) {
+          removed.push({ entityRef: row.entity_ref });
         }
       }
 
@@ -593,36 +590,33 @@ export class IncrementalIngestionDatabaseManager {
 
   /**
    * Performs an upsert to the `ingestion_mark_entities` table for all deferred entities.
-   * @param markId - string
+   * @param sourceKey - string
    * @param entities - DeferredEntity[]
+   * @param markId - string
    */
-  async createMarkEntities(markId: string, entities: DeferredEntity[]) {
+  async createMarkEntities(
+    sourceKey: string,
+    entities: DeferredEntity[],
+    markId: string,
+  ) {
+    if (entities.length === 0) {
+      return;
+    }
+
     const refs = entities.map(e => stringifyEntityRef(e.entity));
 
     await this.client.transaction(async tx => {
-      const existingRefsArray = (
-        await tx<{ ref: string }>('ingestion_mark_entities')
-          .select('ref')
-          .whereIn('ref', refs)
-      ).map(e => e.ref);
-
-      const existingRefsSet = new Set(existingRefsArray);
-
-      const newRefs = refs.filter(e => !existingRefsSet.has(e));
-
       await tx('ingestion_mark_entities')
-        .update('ingestion_mark_id', markId)
-        .whereIn('ref', existingRefsArray);
-
-      if (newRefs.length > 0) {
-        await tx('ingestion_mark_entities').insert(
-          newRefs.map(ref => ({
+        .insert(
+          refs.map(entityRef => ({
             id: v4(),
             ingestion_mark_id: markId,
-            ref,
+            source_key: sourceKey,
+            entity_ref: entityRef,
           })),
-        );
-      }
+        )
+        .onConflict(['source_key', 'entity_ref'])
+        .merge(['ingestion_mark_id']);
     });
   }
 

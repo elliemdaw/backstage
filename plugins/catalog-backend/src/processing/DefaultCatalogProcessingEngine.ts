@@ -27,7 +27,6 @@ import { trace } from '@opentelemetry/api';
 import { ProcessingDatabase, RefreshStateItem } from '../database/types';
 import { createCounterMetric, createSummaryMetric } from '../util/metrics';
 import { CatalogProcessingOrchestrator, EntityProcessingResult } from './types';
-import { Stitcher, stitchingStrategyFromConfig } from '../stitching/types';
 import { startTaskPipeline } from './TaskPipeline';
 import { Config } from '@backstage/config';
 import {
@@ -36,8 +35,10 @@ import {
   withActiveSpan,
 } from '../util/opentelemetry';
 import { deleteOrphanedEntities } from '../database/operations/util/deleteOrphanedEntities';
+import { markForStitching } from '../database/operations/stitcher/markForStitching';
 import { EventsService } from '@backstage/plugin-events-node';
 import { CATALOG_ERRORS_TOPIC } from '../constants';
+import { retryOnDeadlock } from '../database/util';
 import { LoggerService, SchedulerService } from '@backstage/backend-plugin-api';
 import { MetricsService } from '@backstage/backend-plugin-api/alpha';
 
@@ -65,7 +66,6 @@ export class DefaultCatalogProcessingEngine {
   private readonly knex: Knex;
   private readonly processingDatabase: ProcessingDatabase;
   private readonly orchestrator: CatalogProcessingOrchestrator;
-  private readonly stitcher: Stitcher;
   private readonly createHash: () => Hash;
   private readonly pollingIntervalMs: number;
   private readonly orphanCleanupIntervalMs: number;
@@ -85,7 +85,6 @@ export class DefaultCatalogProcessingEngine {
     knex: Knex;
     processingDatabase: ProcessingDatabase;
     orchestrator: CatalogProcessingOrchestrator;
-    stitcher: Stitcher;
     createHash: () => Hash;
     pollingIntervalMs?: number;
     orphanCleanupIntervalMs?: number;
@@ -103,7 +102,6 @@ export class DefaultCatalogProcessingEngine {
     this.knex = options.knex;
     this.processingDatabase = options.processingDatabase;
     this.orchestrator = options.orchestrator;
-    this.stitcher = options.stitcher;
     this.createHash = options.createHash;
     this.pollingIntervalMs = options.pollingIntervalMs ?? 1_000;
     this.orphanCleanupIntervalMs = options.orphanCleanupIntervalMs ?? 30_000;
@@ -256,7 +254,7 @@ export class DefaultCatalogProcessingEngine {
             // non-catastrophic things such as due to validation errors, as well as if
             // something fatal happens inside the processing for other reasons. In any
             // case, this means we can't trust that anything in the output is okay. So
-            // just store the errors and trigger a stich so that they become visible to
+            // just store the errors and trigger a stitch so that they become visible to
             // the outside.
             if (!result.ok) {
               // notify the error listener if the entity can not be processed.
@@ -275,72 +273,65 @@ export class DefaultCatalogProcessingEngine {
                   );
                 });
 
-              await this.processingDatabase.transaction(async tx => {
-                await this.processingDatabase.updateProcessedEntityErrors(tx, {
-                  id,
-                  errors: errorsString,
-                  resultHash,
-                });
-              });
-
-              await this.stitcher.stitch({
-                entityRefs: [stringifyEntityRef(unprocessedEntity)],
-              });
+              await retryOnDeadlock(
+                () =>
+                  this.processingDatabase.transaction(async tx => {
+                    await this.processingDatabase.updateProcessedEntityErrors(
+                      tx,
+                      {
+                        id,
+                        errors: errorsString,
+                        resultHash,
+                      },
+                    );
+                    await markForStitching({
+                      knex: tx as Knex.Transaction,
+                      entityRefs: [stringifyEntityRef(unprocessedEntity)],
+                    });
+                  }),
+                this.knex,
+              );
 
               track.markSuccessfulWithErrors();
               return;
             }
 
             result.completedEntity.metadata.uid = id;
-            let oldRelationSources: Map<string, string>;
-            await this.processingDatabase.transaction(async tx => {
-              const { previous } =
-                await this.processingDatabase.updateProcessedEntity(tx, {
-                  id,
-                  processedEntity: result.completedEntity,
-                  resultHash,
-                  errors: errorsString,
-                  relations: result.relations,
-                  deferredEntities: result.deferredEntities,
-                  locationKey,
-                  refreshKeys: result.refreshKeys,
-                });
-              oldRelationSources = new Map(
-                previous.relations.map(r => [
-                  `${r.source_entity_ref}:${r.type}->${r.target_entity_ref}`,
-                  r.source_entity_ref,
-                ]),
-              );
-            });
+            await retryOnDeadlock(
+              () =>
+                this.processingDatabase.transaction(async tx => {
+                  const { relationsChange } =
+                    await this.processingDatabase.updateProcessedEntity(tx, {
+                      id,
+                      processedEntity: result.completedEntity,
+                      resultHash,
+                      errors: errorsString,
+                      relations: result.relations,
+                      deferredEntities: result.deferredEntities,
+                      locationKey,
+                      refreshKeys: result.refreshKeys,
+                    });
 
-            const newRelationSources = new Map<string, string>(
-              result.relations.map(relation => {
-                const sourceEntityRef = stringifyEntityRef(relation.source);
-                const targetEntityRef = stringifyEntityRef(relation.target);
-                return [
-                  `${sourceEntityRef}:${relation.type}->${targetEntityRef}`,
-                  sourceEntityRef,
-                ];
-              }),
+                  // Only stitch entities whose relations actually changed.
+                  // In steady state (no relation changes), this is just the
+                  // entity itself — no unnecessary stitching of neighbors.
+                  const setOfThingsToStitch = new Set<string>([
+                    stringifyEntityRef(result.completedEntity),
+                  ]);
+                  for (const r of relationsChange.deleted) {
+                    setOfThingsToStitch.add(r.source_entity_ref);
+                  }
+                  for (const r of relationsChange.inserted) {
+                    setOfThingsToStitch.add(r.source_entity_ref);
+                  }
+
+                  await markForStitching({
+                    knex: tx as Knex.Transaction,
+                    entityRefs: setOfThingsToStitch,
+                  });
+                }),
+              this.knex,
             );
-
-            const setOfThingsToStitch = new Set<string>([
-              stringifyEntityRef(result.completedEntity),
-            ]);
-            newRelationSources.forEach((sourceEntityRef, uniqueKey) => {
-              if (!oldRelationSources.has(uniqueKey)) {
-                setOfThingsToStitch.add(sourceEntityRef);
-              }
-            });
-            oldRelationSources!.forEach((sourceEntityRef, uniqueKey) => {
-              if (!newRelationSources.has(uniqueKey)) {
-                setOfThingsToStitch.add(sourceEntityRef);
-              }
-            });
-
-            await this.stitcher.stitch({
-              entityRefs: setOfThingsToStitch,
-            });
 
             track.markSuccessfulWithChanges();
           } catch (error) {
@@ -358,13 +349,10 @@ export class DefaultCatalogProcessingEngine {
       return () => {};
     }
 
-    const stitchingStrategy = stitchingStrategyFromConfig(this.config);
-
     const runOnce = async () => {
       try {
         const n = await deleteOrphanedEntities({
           knex: this.knex,
-          strategy: stitchingStrategy,
         });
         if (n > 0) {
           this.logger.info(`Deleted ${n} orphaned entities`);

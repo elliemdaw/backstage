@@ -1,0 +1,645 @@
+# Catalog Query Performance Battery
+
+Each scenario describes a user-facing action, the catalog method that
+serves it, and what a healthy query plan looks like. The goal is to
+detect performance regressions when database queries, indexes, or
+schema change.
+
+## How to run
+
+**Preferred method**: Instantiate `DefaultEntitiesCatalog` (or call the
+REST endpoints) with the parameters shown for each scenario, prefixed
+with `EXPLAIN (ANALYZE, BUFFERS)` on the database side (e.g., via knex
+debug logging or a database proxy that captures plans). This tests the
+actual query the code produces.
+
+**Alternative**: Run the reference SQL directly against a
+production-scale replica using `psql`. The SQL is a snapshot of what the
+code produced at the time of writing — verify it still matches before
+drawing conclusions.
+
+Record execution time, plan shape, and buffer usage in `baseline.md`. Keep one
+readable representative full plan per scenario in `plans.md` and the exact
+machine-diffable final-run output in `plans.json`.
+
+---
+
+## 1. Paginated entity list (kind=component, ordered by name)
+
+**User action**: Opening the default catalog table view.
+
+**Method call**:
+
+```ts
+catalog.queryEntities({
+  filter: { kind: 'component' },
+  orderFields: [{ field: 'metadata.name', order: 'asc' }],
+  limit: 20,
+  credentials,
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT final_entities.entity_id, final_entities.final_entity, search.value
+FROM search
+INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+WHERE search.key = 'metadata.name'
+  AND search.value IS NOT NULL
+  AND final_entities.final_entity IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM search AS s
+    WHERE s.entity_id = final_entities.entity_id
+      AND s.key = 'kind' AND s.value = 'component'
+  )
+ORDER BY search.value ASC, final_entities.entity_id ASC
+LIMIT 21;
+```
+
+**Healthy plan**: Index Scan on `search_key_value_entity_idx` driving
+the query in sort order, LIMIT short-circuit after 21 rows. Execution
+time <50ms on a production-scale catalog.
+
+**Anti-patterns**:
+
+- Materialized CTE (means the query shape forced full-set evaluation)
+- Sort node above a Seq Scan (means the index isn't providing order)
+- Execution time >50ms
+
+---
+
+## 2. Count query (kind=component)
+
+**User action**: The `totalItems` count shown in the catalog table
+footer.
+
+**Method call**:
+
+```ts
+catalog.queryEntities({
+  filter: { kind: 'component' },
+  orderFields: [{ field: 'metadata.name', order: 'asc' }],
+  limit: 20,
+  credentials,
+});
+// The count is the totalItems field in the response.
+```
+
+**Reference SQL** (the count portion, run in parallel with the list):
+
+```sql
+SELECT count(*) AS count
+FROM search
+INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+WHERE search.key = 'metadata.name'
+  AND search.value IS NOT NULL
+  AND final_entities.final_entity IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM search AS s
+    WHERE s.entity_id = final_entities.entity_id
+      AND s.key = 'kind' AND s.value = 'component'
+  );
+```
+
+**Healthy plan**: Index-backed lookups on `search`; a parallel hash join with a
+Sequential Scan on `final_entities` is also healthy for a large result set.
+This is inherently expensive because the execution time is the floor for any
+query that needs the count.
+
+**Anti-patterns**:
+
+- Seq Scan on `search` (missing index)
+- Execution time growing super-linearly with entity count
+
+---
+
+## 3. Paginated entity list (no filter, LIMIT 21)
+
+**User action**: The "show everything" view with no filters applied.
+Worst case for pagination — LIMIT short-circuit is critical.
+
+**Method call**:
+
+```ts
+catalog.queryEntities({
+  limit: 20,
+  credentials,
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT final_entities.entity_id, final_entities.final_entity
+FROM final_entities
+WHERE final_entities.final_entity IS NOT NULL
+ORDER BY final_entities.entity_ref ASC
+LIMIT 21;
+```
+
+**Healthy plan**: Index Scan on `final_entities_entity_ref_uniq`.
+Execution time <1ms.
+
+**Anti-patterns**:
+
+- Sort node (means the index isn't providing order)
+- Seq Scan on `final_entities`
+
+---
+
+## 4. Facets query (kind=template, facet=spec.type)
+
+**User action**: Sidebar facet counts for a small result set.
+
+**Method call**:
+
+```ts
+catalog.facets({
+  filter: { kind: 'template' },
+  facets: ['spec.type'],
+  credentials,
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT search.key AS facet, search.original_value AS value, count(*) AS count
+FROM search
+INNER JOIN (
+  SELECT final_entities.entity_id
+  FROM final_entities
+  WHERE final_entities.final_entity IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM search AS s
+      WHERE s.entity_id = final_entities.entity_id
+        AND s.key = 'kind' AND s.value = 'template'
+    )
+) AS filtered_entities ON search.entity_id = filtered_entities.entity_id
+WHERE search.key IN ('spec.type')
+  AND search.original_value IS NOT NULL
+GROUP BY search.key, search.original_value
+ORDER BY search.key, search.original_value;
+```
+
+**Healthy plan**: Uses `search_facets_covering_idx` or
+`search_key_value_entity_idx` for the facet aggregation. The filtered
+entity subquery uses index-backed EXISTS.
+
+**Anti-patterns**:
+
+- Seq Scan on `search` for the outer query
+- Hash Join instead of Nested Loop for small result sets
+
+---
+
+## 5. Facets query (kind=component, facet=spec.type) — large result set
+
+**User action**: Same as above but with a large filtered set (~tens of
+thousands of components). Tests whether the plan stays efficient at
+scale.
+
+**Method call**:
+
+```ts
+catalog.facets({
+  filter: { kind: 'component' },
+  facets: ['spec.type'],
+  credentials,
+});
+```
+
+**Reference SQL**: Same as scenario 4 but with `kind = 'component'`
+instead of `'template'`.
+
+**Healthy plan**: Similar to scenario 4 but may use Hash Join for the
+larger filtered set. Execution time proportional to the number of
+matching entities.
+
+**Anti-patterns**:
+
+- Seq Scan on the `search` table (outer or inner)
+- Temp file spills (check Buffers: temp)
+
+---
+
+## 6. Entity by ref lookup
+
+**User action**: Viewing a single entity page by name.
+
+**Method call**:
+
+```ts
+catalog.entitiesBatch({
+  entityRefs: ['component:default/my-service'],
+  credentials,
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT final_entities.final_entity
+FROM final_entities
+WHERE final_entities.entity_ref = 'component:default/my-service';
+```
+
+**Healthy plan**: Index Scan on `final_entities_entity_ref_uniq`.
+Execution time <1ms.
+
+**Anti-patterns**:
+
+- Seq Scan (catastrophic — means the unique index is missing)
+
+---
+
+## 7. Full-text filter (LIKE '%player%', kind=component)
+
+**User action**: Typing in the search box on the catalog table. The leading
+wildcard prevents an index seek for the term, but an ordered scan can still
+short-circuit after finding enough matches for the requested page.
+
+**Method call**:
+
+```ts
+catalog.queryEntities({
+  filter: { kind: 'component' },
+  orderFields: [{ field: 'metadata.name', order: 'asc' }],
+  fullTextFilter: { term: 'player' },
+  limit: 20,
+  credentials,
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT final_entities.entity_id, final_entities.final_entity, search.value
+FROM search
+INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+WHERE search.key = 'metadata.name'
+  AND search.value IS NOT NULL
+  AND final_entities.final_entity IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM search AS s
+    WHERE s.entity_id = final_entities.entity_id
+      AND s.key = 'kind' AND s.value = 'component'
+  )
+  AND search.value LIKE '%player%'
+ORDER BY search.value ASC, final_entities.entity_id ASC
+LIMIT 21;
+```
+
+**Healthy plan**: Ordered Index Scan on `search_key_value_entity_idx` for
+`key = 'metadata.name'`, with the LIKE applied as a filter and LIMIT
+short-circuiting after enough matches. The LIKE cannot perform an index seek
+because of the leading wildcard, but the rest of the query should be
+index-driven.
+
+**Anti-patterns**:
+
+- Seq Scan on `search` (the LIKE should be a filter on an index scan,
+  not a seq scan trigger)
+
+---
+
+## 8. Relations traversal (entity ancestry)
+
+**User action**: The `/entities/by-name/.../ancestry` endpoint.
+
+**Method call**:
+
+```ts
+catalog.entityAncestry('component:default/my-service', { credentials });
+```
+
+**Reference SQL** (one step of the iterative traversal):
+
+```sql
+SELECT
+  refresh_state_references.source_entity_ref,
+  final_entities.entity_ref,
+  final_entities.final_entity
+FROM refresh_state_references
+INNER JOIN final_entities
+  ON refresh_state_references.source_entity_ref = final_entities.entity_ref
+WHERE refresh_state_references.target_entity_ref = 'component:default/my-service'
+LIMIT 10;
+```
+
+**Healthy plan**: Index Scan on
+`refresh_state_references_target_entity_ref_idx`, Nested Loop with
+Index Scan on `final_entities_entity_ref_uniq`.
+
+**Anti-patterns**:
+
+- Seq Scan on `refresh_state_references` (missing target index)
+- Seq Scan on `relations` (missing `target_entity_ref` index)
+
+---
+
+## 9. Stitching: incoming reference count
+
+**Context**: Run on every stitch to determine orphan status. Not a
+user-facing action but critical for processing throughput.
+
+**Reference SQL**:
+
+```sql
+SELECT count(*) AS count
+FROM refresh_state_references
+WHERE target_entity_ref = 'component:default/my-service';
+```
+
+**Healthy plan**: Index Only Scan on
+`refresh_state_references_target_entity_ref_idx`. Execution time <1ms.
+
+**Anti-patterns**:
+
+- Seq Scan (missing index)
+
+---
+
+## 10. Adversarial: unfiltered count
+
+**User action**: Count the entire catalog with no filters. Establishes
+the ceiling for count performance.
+
+**Method call**:
+
+```ts
+catalog.queryEntities({
+  limit: 0,
+  credentials,
+});
+// totalItems in the response is the full catalog count.
+```
+
+**Reference SQL**:
+
+```sql
+SELECT count(*) AS count
+FROM search
+INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+WHERE search.key = 'metadata.name'
+  AND search.value IS NOT NULL
+  AND final_entities.final_entity IS NOT NULL;
+```
+
+**Healthy plan**: Index scan on `search_key_value_entity_idx`. Execution
+time proportional to total catalog size.
+
+**Anti-patterns**:
+
+- Seq Scan on `search`; a Sequential Scan on `final_entities` can be healthy
+  when it feeds the parallel hash join used by the canonical plan
+- Execution time >30s on a production-scale catalog
+
+---
+
+## 11. Orphan detection anti-join
+
+**Context**: Periodic orphan cleanup (`deleteOrphanedEntities`). Runs
+every 30 seconds by default. Not user-facing but a constant background
+load.
+
+**Reference SQL**:
+
+```sql
+SELECT refresh_state.entity_id, refresh_state.entity_ref
+FROM refresh_state
+LEFT OUTER JOIN refresh_state_references
+  ON refresh_state_references.target_entity_ref = refresh_state.entity_ref
+WHERE refresh_state_references.target_entity_ref IS NULL
+LIMIT 100;
+```
+
+**Healthy plan**: Uses index on
+`refresh_state_references.target_entity_ref` for the anti-join.
+Execution time <500ms.
+
+**Anti-patterns**:
+
+- Seq Scan on `refresh_state_references` (the main table to avoid
+  scanning)
+- Hash Join pulling the full references table into memory
+
+---
+
+## 12. Ordered disjunction with selective branches
+
+**User action**: List workflows and datasets belonging to the same component.
+This scenario captures a case where each branch is fast by itself, but combining
+them with `$any` makes the ordered query substantially slower.
+
+**Catalog client call** (`catalogClient` implements `CatalogApi` and uses the
+POST predicate endpoint):
+
+```ts
+catalogClient.queryEntities({
+  query: {
+    $any: [
+      {
+        kind: 'subcomponent',
+        'spec.type': 'workflow',
+        'relations.partOf': 'component:default/content_analytics_dbt',
+      },
+      {
+        kind: 'api',
+        'spec.type': 'dataset',
+        'relations.apiProvidedBy': 'component:default/content_analytics_dbt',
+      },
+    ],
+  },
+  orderFields: [{ field: 'metadata.name', order: 'asc' }],
+  fields: ['kind', 'metadata.name', 'metadata.namespace'],
+  limit: 2000,
+  totalItems: 'exclude',
+});
+```
+
+**Reference SQL**:
+
+```sql
+SELECT final_entities.entity_id, final_entities.final_entity, search.value
+FROM search
+INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+WHERE search.key = 'metadata.name'
+  AND search.value IS NOT NULL
+  AND final_entities.final_entity IS NOT NULL
+  AND (
+    (
+      EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'kind' AND s.value = 'subcomponent'
+      )
+      AND EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'spec.type' AND s.value = 'workflow'
+      )
+      AND EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'relations.partof'
+          AND s.value = 'component:default/content_analytics_dbt'
+      )
+    )
+    OR
+    (
+      EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'kind' AND s.value = 'api'
+      )
+      AND EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'spec.type' AND s.value = 'dataset'
+      )
+      AND EXISTS (
+        SELECT 1 FROM search AS s
+        WHERE s.entity_id = final_entities.entity_id
+          AND s.key = 'relations.apiprovidedby'
+          AND s.value = 'component:default/content_analytics_dbt'
+      )
+    )
+  )
+ORDER BY search.value ASC, final_entities.entity_id ASC
+LIMIT 2001;
+```
+
+**Healthy plan**: Uses indexes for every lookup. Track the number of ordered
+`metadata.name` candidates inspected before the limit is satisfied, because a
+large value makes the correlated branch checks expensive. Compare the combined
+query with each branch in isolation when investigating a regression.
+
+**Anti-patterns**:
+
+- Execution time substantially higher than the two branches in isolation.
+- Tens of thousands of ordered candidates inspected to return approximately
+  2,000 rows.
+- Repeated correlated `kind` and `spec.type` index probes for both branches on
+  most candidates. The relation lookups may instead appear as one-time hashed
+  subplans.
+
+---
+
+## 13. Deep dataset page with default ID ordering
+
+**User action**: Continue a bulk dataset scan without requesting an explicit
+order. `queryEntities` defaults to ascending `entity_id` order, unlike the
+legacy entity-reference ordering shown in scenario 3. Exclude `totalItems` and
+request 10,000 entities; the extra row detects whether another page exists.
+
+**Synthetic cursor**: The ID boundary `'e'` skips most UUID-shaped text IDs
+without depending on an existing entity. It is a SQL test boundary, not a
+public API cursor token. Check that the boundary skips a substantial portion
+of the matching entities and leaves at least 10,001 matches before comparing
+timings on another dataset.
+
+**Reference SQL**:
+
+```sql
+WITH filtered(entity_id, final_entity) AS (
+  SELECT final_entities.entity_id, final_entities.final_entity
+  FROM final_entities
+  WHERE final_entities.final_entity IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM search AS s
+      WHERE s.entity_id = final_entities.entity_id
+        AND s.key = 'kind' AND s.value = 'api'
+    )
+    AND EXISTS (
+      SELECT 1 FROM search AS s
+      WHERE s.entity_id = final_entities.entity_id
+        AND s.key = 'spec.type' AND s.value = 'dataset'
+    )
+)
+SELECT * FROM filtered
+WHERE entity_id > 'e'
+ORDER BY entity_id ASC
+LIMIT 10001;
+```
+
+**Healthy plan**: An index range condition on `entity_id` skips earlier IDs.
+Filtering uses the search indexes, and LIMIT stops after 10,001 eligible rows.
+Track buffer work as well as execution time; a late cursor should not require
+visiting every preceding entity.
+
+**Anti-patterns**:
+
+- The cursor appears only as a filter rather than an index range condition.
+- Large numbers of earlier IDs are inspected despite the late boundary.
+- A blocking sort or materialized CTE prevents LIMIT from stopping the scan.
+
+---
+
+## 14. Deep dataset page ordered by name
+
+**User action**: Continue the same bulk dataset scan as scenario 13, but with
+`metadata.name` ascending and `entity_id` ascending as the tie-breaker.
+
+**Synthetic cursor**: Use the fixed pair `('s', 'e')`. Names need not include an
+entity named exactly `'s'`: the pair describes an ordering boundary, not an
+entity lookup. Verify that it skips most matching names while leaving at
+least 10,001 matches. Keep the equality branch even when no name equals `'s'`,
+so the reference SQL retains the two-column cursor shape used by the service.
+
+**Reference SQL**:
+
+```sql
+WITH filtered(entity_id, final_entity, value) AS (
+  SELECT final_entities.entity_id, final_entities.final_entity, search.value
+  FROM search
+  INNER JOIN final_entities ON final_entities.entity_id = search.entity_id
+  WHERE search.key = 'metadata.name'
+    AND search.value IS NOT NULL
+    AND final_entities.final_entity IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM search AS s
+      WHERE s.entity_id = final_entities.entity_id
+        AND s.key = 'kind' AND s.value = 'api'
+    )
+    AND EXISTS (
+      SELECT 1 FROM search AS s
+      WHERE s.entity_id = final_entities.entity_id
+        AND s.key = 'spec.type' AND s.value = 'dataset'
+    )
+)
+SELECT * FROM filtered
+WHERE value > 's' OR (value = 's' AND entity_id > 'e')
+ORDER BY value ASC, entity_id ASC
+LIMIT 10001;
+```
+
+**Healthy plan**: The ordered search index provides the page order and the
+cursor becomes an index range condition. Compare inspected rows, buffer work,
+sort spills, and execution time: first-page scenarios do not reveal work
+wasted scanning entries before a deep cursor.
+
+**Anti-patterns**:
+
+- The cursor is applied as a filter while the ordered scan starts before it.
+- Hundreds of thousands of repeated index probes to return one page.
+- Sorting full entity payloads for a large candidate set before applying LIMIT.
+
+---
+
+## Global anti-patterns
+
+These should NEVER appear in any of the above queries:
+
+1. **Seq Scan on `search`** — The measured production-scale table is 34GB of
+   heap data and 43GB including indexes, with approximately 21.9M rows in
+   planner statistics. Any sequential scan is catastrophic.
+2. **Seq Scan on `relations`** — The measured table is 1.7GB of heap data and
+   2.3GB including indexes, with approximately 6.1M rows. Use indexes.
+3. **Materialized CTE** — Prevents LIMIT short-circuiting. Was the
+   original cause of slow paginated queries.
+4. **Temp file spills** (look for `Buffers: temp` in EXPLAIN output) —
+   Indicates the query is materializing a large intermediate result.
+5. **Nested Loop with Seq Scan inner** — Usually means a missing index
+   on the inner table's join column.

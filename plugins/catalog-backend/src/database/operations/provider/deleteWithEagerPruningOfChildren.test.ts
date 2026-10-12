@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { TestDatabaseId, TestDatabases } from '@backstage/backend-test-utils';
+import { TestDatabases, mockServices } from '@backstage/backend-test-utils';
 import { Knex } from 'knex';
 import { randomUUID as uuid } from 'node:crypto';
 import { applyDatabaseMigrations } from '../../migrations';
@@ -24,75 +24,167 @@ import {
   DbRelationsRow,
 } from '../../tables';
 import { deleteWithEagerPruningOfChildren } from './deleteWithEagerPruningOfChildren';
+import { markForStitching } from '../stitcher/markForStitching';
+import { performStitching } from '../stitcher/performStitching';
+import { getDeferredStitchableEntities } from '../stitcher/getDeferredStitchableEntities';
 
 jest.setTimeout(60_000);
 
-describe('deleteWithEagerPruningOfChildren', () => {
-  const databases = TestDatabases.create();
+const databases = TestDatabases.create();
 
-  async function createDatabase(databaseId: TestDatabaseId) {
-    const knex = await databases.init(databaseId);
-    await applyDatabaseMigrations(knex);
-    return knex;
-  }
-
-  async function insertReference(
-    knex: Knex,
-    ...refs: DbRefreshStateReferencesRow[]
-  ) {
-    return knex<DbRefreshStateReferencesRow>('refresh_state_references').insert(
-      refs,
-    );
-  }
-
-  async function insertRelation(
-    knex: Knex,
-    ...relations: { from: string; to: string }[]
-  ) {
-    for (const rel of relations) {
-      await knex<DbRelationsRow>('relations').insert({
-        originating_entity_id: await knex<DbRefreshStateRow>('refresh_state')
-          .select('entity_id')
-          .then(rows => rows[0].entity_id), // doesn't matter which one, this is consumed pre-deletion
-        source_entity_ref: rel.from,
-        target_entity_ref: rel.to,
-        type: 'fake',
-      });
+describe.each(databases.eachSupportedId())(
+  'deleteWithEagerPruningOfChildren, %p',
+  databaseId => {
+    async function createDatabase() {
+      const knex = await databases.init(databaseId);
+      await applyDatabaseMigrations(knex);
+      return knex;
     }
-  }
 
-  async function insertEntity(knex: Knex, ...entityRefs: string[]) {
-    for (const ref of entityRefs) {
-      await knex<DbRefreshStateRow>('refresh_state').insert({
-        entity_id: uuid(),
-        entity_ref: ref,
-        unprocessed_entity: '{}',
-        processed_entity: '{}',
-        errors: '[]',
-        next_update_at: '2021-04-01 13:37:00',
-        last_discovery_at: '2021-04-01 13:37:00',
-      });
+    async function insertReference(
+      knex: Knex,
+      ...refs: DbRefreshStateReferencesRow[]
+    ) {
+      return knex<DbRefreshStateReferencesRow>(
+        'refresh_state_references',
+      ).insert(refs);
     }
-  }
 
-  async function remainingEntities(knex: Knex) {
-    const rows = await knex<DbRefreshStateRow>('refresh_state')
-      .orderBy('entity_ref')
-      .select('entity_ref');
-    return rows.map(r => r.entity_ref);
-  }
+    async function insertRelation(
+      knex: Knex,
+      ...relations: { from: string; to: string }[]
+    ) {
+      for (const rel of relations) {
+        await knex<DbRelationsRow>('relations').insert({
+          originating_entity_id: await knex<DbRefreshStateRow>('refresh_state')
+            .select('entity_id')
+            .then(rows => rows[0].entity_id), // doesn't matter which one, this is consumed pre-deletion
+          source_entity_ref: rel.from,
+          target_entity_ref: rel.to,
+          type: 'fake',
+        });
+      }
+    }
 
-  async function entitiesMarkedForStitching(knex: Knex) {
-    const rows = await knex<DbRefreshStateRow>('refresh_state')
-      .orderBy('entity_ref')
-      .select('entity_ref')
-      .where('result_hash', '=', 'force-stitching');
-    return rows.map(r => r.entity_ref);
-  }
+    async function insertEntity(knex: Knex, ...entityRefs: string[]) {
+      for (const ref of entityRefs) {
+        await knex<DbRefreshStateRow>('refresh_state').insert({
+          entity_id: uuid(),
+          entity_ref: ref,
+          unprocessed_entity: '{}',
+          processed_entity: '{}',
+          errors: '[]',
+          next_update_at: '2021-04-01 13:37:00',
+          last_discovery_at: '2021-04-01 13:37:00',
+        });
+      }
+    }
 
-  it.each(databases.eachSupportedId())(
-    'works for the simple path, %p',
-    async databaseId => {
+    async function remainingEntities(knex: Knex) {
+      const rows = await knex<DbRefreshStateRow>('refresh_state')
+        .orderBy('entity_ref')
+        .select('entity_ref');
+      return rows.map(r => r.entity_ref);
+    }
+
+    async function entitiesMarkedForStitching(knex: Knex) {
+      const rows = await knex('stitch_queue')
+        .orderBy('entity_ref')
+        .select('entity_ref');
+      return rows.map(r => r.entity_ref);
+    }
+
+    it('leaves queued deleted entities for the stitcher to settle', async () => {
+      const knex = await createDatabase();
+      await insertEntity(knex, 'E1', 'E2');
+      await insertReference(
+        knex,
+        { source_key: 'P1', target_entity_ref: 'E1' },
+        { source_entity_ref: 'E1', target_entity_ref: 'E2' },
+      );
+      await markForStitching({ knex, entityRefs: ['E1', 'E2'] });
+      const queued = await knex('stitch_queue').orderBy('entity_ref');
+      await deleteWithEagerPruningOfChildren({
+        knex,
+        sourceKey: 'P1',
+        entityRefs: ['E1'],
+      });
+      await expect(remainingEntities(knex)).resolves.toEqual([]);
+      await expect(knex('stitch_queue').orderBy('entity_ref')).resolves.toEqual(
+        queued,
+      );
+      const claims = await getDeferredStitchableEntities({
+        knex,
+        batchSize: 10,
+        stitchTimeout: { minutes: 1 },
+      });
+      for (const item of claims) {
+        await expect(
+          performStitching({
+            knex,
+            logger: mockServices.logger.mock(),
+            ...item,
+          }),
+        ).resolves.toBe('abandoned');
+      }
+      await expect(knex('stitch_queue')).resolves.toEqual([]);
+    });
+
+    it('can stitch a reintroduced ref from work retained through deletion', async () => {
+      const knex = await createDatabase();
+      const entityRef = 'k:ns/n';
+      await insertEntity(knex, entityRef);
+      await insertReference(knex, {
+        source_key: 'P1',
+        target_entity_ref: entityRef,
+      });
+      await markForStitching({ knex, entityRefs: [entityRef] });
+      expect(
+        await deleteWithEagerPruningOfChildren({
+          knex,
+          sourceKey: 'P1',
+          entityRefs: [entityRef],
+        }),
+      ).toBe(1);
+      await insertEntity(knex, entityRef);
+      await insertReference(knex, {
+        source_key: 'P1',
+        target_entity_ref: entityRef,
+      });
+      await knex('refresh_state')
+        .where('entity_ref', entityRef)
+        .update({
+          processed_entity: JSON.stringify({
+            apiVersion: 'a',
+            kind: 'k',
+            metadata: { name: 'n', namespace: 'ns' },
+            spec: { reintroduced: true },
+          }),
+        });
+      const replacement = await knex('refresh_state')
+        .where('entity_ref', entityRef)
+        .first();
+      const [claim] = await getDeferredStitchableEntities({
+        knex,
+        batchSize: 1,
+        stitchTimeout: { minutes: 1 },
+      });
+      await expect(
+        performStitching({
+          knex,
+          logger: mockServices.logger.mock(),
+          ...claim,
+        }),
+      ).resolves.toBe('changed');
+      const final = await knex('final_entities').first();
+      expect(JSON.parse(final.final_entity)).toMatchObject({
+        metadata: { uid: replacement.entity_id },
+        spec: { reintroduced: true },
+      });
+      await expect(knex('stitch_queue')).resolves.toEqual([]);
+    });
+
+    it('works for the simple path', async () => {
       /*
           P1 - E1 - E2
 
@@ -106,7 +198,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: E1, E2, and E3 deleted; E4 and E5 remain; E4 marked for stitching because it had a relation to a deleted entity
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2', 'E3', 'E4', 'E5');
       await insertReference(
         knex,
@@ -124,12 +216,9 @@ describe('deleteWithEagerPruningOfChildren', () => {
       });
       await expect(remainingEntities(knex)).resolves.toEqual(['E4', 'E5']);
       await expect(entitiesMarkedForStitching(knex)).resolves.toEqual(['E4']);
-    },
-  );
+    });
 
-  it.each(databases.eachSupportedId())(
-    'works when there are multiple identical references, %p',
-    async databaseId => {
+    it('works when there are multiple identical references', async () => {
       /*
           P1
             \
@@ -143,7 +232,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: E1 deleted; E2 remains; E2 marked for stitching because it had a relation to a deleted entity
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2');
       await insertReference(
         knex,
@@ -159,12 +248,9 @@ describe('deleteWithEagerPruningOfChildren', () => {
       });
       await expect(remainingEntities(knex)).resolves.toEqual(['E2']);
       await expect(entitiesMarkedForStitching(knex)).resolves.toEqual(['E2']);
-    },
-  );
+    });
 
-  it.each(databases.eachSupportedId())(
-    'leaves out things that have roots in other source keys, %p',
-    async databaseId => {
+    it('leaves out things that have roots in other source keys', async () => {
       /*
           P1 - E1
                  \
@@ -176,7 +262,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: E1 deleted; E2 and E3 remain; E2 marked for stitching because it had a relation to a deleted entity
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2', 'E3');
       await insertReference(
         knex,
@@ -197,12 +283,9 @@ describe('deleteWithEagerPruningOfChildren', () => {
       });
       await expect(remainingEntities(knex)).resolves.toEqual(['E2', 'E3']);
       await expect(entitiesMarkedForStitching(knex)).resolves.toEqual(['E2']);
-    },
-  );
+    });
 
-  it.each(databases.eachSupportedId())(
-    'leaves out things that have several different roots for the same source key, %p',
-    async databaseId => {
+    it('leaves out things that have several different roots for the same source key', async () => {
       /*
           P1 - E1
                  \
@@ -214,7 +297,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: E1 deleted; E2 and E3 remain
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2', 'E3');
       await insertReference(
         knex,
@@ -230,12 +313,9 @@ describe('deleteWithEagerPruningOfChildren', () => {
       });
       await expect(remainingEntities(knex)).resolves.toEqual(['E2', 'E3']);
       await expect(entitiesMarkedForStitching(knex)).resolves.toEqual([]);
-    },
-  );
+    });
 
-  it.each(databases.eachSupportedId())(
-    'handles cycles and diamonds gracefully, %p',
-    async databaseId => {
+    it('handles cycles and diamonds gracefully', async () => {
       /*
           P1 - E1 <-> E2
                         \
@@ -247,7 +327,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: Everything deleted, but in two steps; E4 marked for stitching in the first step because it had a relation to a deleted entity
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2', 'E3', 'E4', 'E5', 'E6');
       await insertReference(
         knex,
@@ -280,13 +360,10 @@ describe('deleteWithEagerPruningOfChildren', () => {
         entityRefs: ['E3'],
       });
       await expect(remainingEntities(knex)).resolves.toEqual([]);
-      await expect(entitiesMarkedForStitching(knex)).resolves.toEqual([]);
-    },
-  );
+      await expect(entitiesMarkedForStitching(knex)).resolves.toEqual(['E4']);
+    });
 
-  it.each(databases.eachSupportedId())(
-    'silently ignores attempts to delete things that are not your own and/or are not roots, %p',
-    async databaseId => {
+    it('silently ignores attempts to delete things that are not your own and/or are not roots', async () => {
       /*
           P1 - E1 - E2
 
@@ -298,7 +375,7 @@ describe('deleteWithEagerPruningOfChildren', () => {
 
           Result: E3 is deleted; E1, E2 and E4 remain
        */
-      const knex = await createDatabase(databaseId);
+      const knex = await createDatabase();
       await insertEntity(knex, 'E1', 'E2', 'E3', 'E4');
       await insertReference(
         knex,
@@ -318,6 +395,6 @@ describe('deleteWithEagerPruningOfChildren', () => {
         'E4',
       ]);
       await expect(entitiesMarkedForStitching(knex)).resolves.toEqual([]);
-    },
-  );
-});
+    });
+  },
+);

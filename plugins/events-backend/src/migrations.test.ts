@@ -42,63 +42,121 @@ async function migrateUntilBefore(knex: Knex, target: string): Promise<void> {
 jest.setTimeout(60_000);
 
 const databases = TestDatabases.create({
-  ids: ['POSTGRES_9', 'POSTGRES_14', 'POSTGRES_16'],
+  ids: ['POSTGRES_14', 'POSTGRES_18'],
 });
 
-const maybeDescribe =
-  databases.eachSupportedId().length > 0 ? describe : describe.skip;
+const nonPostgresDatabases = TestDatabases.create({
+  ids: ['SQLITE_3', 'MYSQL_8'],
+});
 
-maybeDescribe('migrations', () => {
-  it.each(databases.eachSupportedId())(
-    '20240523100528_init.js, %p',
-    async databaseId => {
-      const knex = await databases.init(databaseId);
+it('runs the event index migration outside a transaction', () => {
+  const migration = jest.requireActual<{
+    config?: { transaction?: boolean };
+  }>('../migrations/20260930120000_event_bus_cleanup_indices');
 
-      await migrateUntilBefore(knex, '20240523100528_init.js');
-      await migrateUpOnce(knex);
+  expect(migration.config).toEqual({ transaction: false });
+});
 
-      await knex('event_bus_events').insert({
-        topic: 'test',
+describe.each(nonPostgresDatabases.eachSupportedId())(
+  'migrations, %p',
+  databaseId => {
+    it('does not create PostgreSQL-only event tables or indexes', async () => {
+      const knex = await nonPostgresDatabases.init(databaseId);
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      await expect(knex.schema.hasTable('event_bus_events')).resolves.toBe(
+        false,
+      );
+      await expect(
+        knex.schema.hasTable('event_bus_subscriptions'),
+      ).resolves.toBe(false);
+    });
+  },
+);
+
+describe.each(databases.eachSupportedId())('migrations, %p', databaseId => {
+  it('20240523100528_init.js', async () => {
+    const knex = await databases.init(databaseId);
+
+    await migrateUntilBefore(knex, '20240523100528_init.js');
+    await migrateUpOnce(knex);
+
+    await knex('event_bus_events').insert({
+      topic: 'test',
+      created_by: 'abc',
+      data_json: JSON.stringify({ message: 'hello' }),
+      notified_subscribers: ['tester'],
+    });
+    await knex('event_bus_subscriptions').insert({
+      id: 'tester',
+      created_by: 'abc',
+      read_until: '5',
+      topics: ['test', 'test2'],
+    });
+
+    await expect(knex('event_bus_events')).resolves.toEqual([
+      {
+        id: '1',
         created_by: 'abc',
+        topic: 'test',
         data_json: JSON.stringify({ message: 'hello' }),
+        created_at: expect.anything(),
         notified_subscribers: ['tester'],
-      });
-      await knex('event_bus_subscriptions').insert({
+      },
+    ]);
+    await expect(knex('event_bus_subscriptions')).resolves.toEqual([
+      {
         id: 'tester',
         created_by: 'abc',
+        created_at: expect.anything(),
+        updated_at: expect.anything(),
         read_until: '5',
         topics: ['test', 'test2'],
-      });
+      },
+    ]);
 
-      await expect(knex('event_bus_events')).resolves.toEqual([
-        {
-          id: '1',
-          created_by: 'abc',
-          topic: 'test',
-          data_json: JSON.stringify({ message: 'hello' }),
-          created_at: expect.anything(),
-          notified_subscribers: ['tester'],
-        },
-      ]);
-      await expect(knex('event_bus_subscriptions')).resolves.toEqual([
-        {
-          id: 'tester',
-          created_by: 'abc',
-          created_at: expect.anything(),
-          updated_at: expect.anything(),
-          read_until: '5',
-          topics: ['test', 'test2'],
-        },
-      ]);
+    await migrateDownOnce(knex);
 
-      await migrateDownOnce(knex);
+    // This looks odd - you might expect a .toThrow at the end but that
+    // actually is flaky for some reason specifically on sqlite when
+    // performing multiple runs in sequence
+    await expect(knex('event_bus_events')).rejects.toEqual(expect.anything());
+  });
 
-      // This looks odd - you might expect a .toThrow at the end but that
-      // actually is flaky for some reason specifically on sqlite when
-      // performing multiple runs in sequence
-      await expect(knex('event_bus_events')).rejects.toEqual(expect.anything());
+  it('20260930120000_event_bus_cleanup_indices.js', async () => {
+    const knex = await databases.init(databaseId);
 
-      await knex.destroy();
-    },
-  );
+    await migrateUntilBefore(
+      knex,
+      '20260930120000_event_bus_cleanup_indices.js',
+    );
+
+    const indexNames = async () => {
+      const { rows } = await knex.raw(
+        `SELECT indexname FROM pg_indexes
+         WHERE schemaname = current_schema()
+           AND tablename = 'event_bus_events'
+         ORDER BY indexname`,
+      );
+      return rows.map((row: { indexname: string }) => row.indexname);
+    };
+
+    await expect(indexNames()).resolves.toEqual([
+      'event_bus_events_pkey',
+      'event_bus_events_topic_idx',
+    ]);
+
+    await migrateUpOnce(knex);
+    await expect(indexNames()).resolves.toEqual([
+      'event_bus_events_created_at_id_idx',
+      'event_bus_events_pkey',
+      'event_bus_events_topic_id_idx',
+    ]);
+
+    await migrateDownOnce(knex);
+    await expect(indexNames()).resolves.toEqual([
+      'event_bus_events_pkey',
+      'event_bus_events_topic_idx',
+    ]);
+  });
 });

@@ -17,6 +17,7 @@
 import { DEFAULT_NAMESPACE, Entity } from '@backstage/catalog-model';
 import { InputError } from '@backstage/errors';
 import { DbSearchRow } from '../../tables';
+import { NULL_SENTINEL } from './util';
 
 // These are excluded in the generic loop, either because they do not make sense
 // to index, or because they are special-case always inserted whether they are
@@ -116,7 +117,7 @@ export function traverse(root: unknown): Kv[] {
         visit(path, item);
         if (typeof item === 'string') {
           const pathKey = `${path}.${item}`;
-          const lowerKey = pathKey.toLocaleLowerCase('en-US');
+          const lowerKey = pathKey.toLowerCase();
           if (!seenPathKeys.has(lowerKey)) {
             seenPathKeys.add(lowerKey);
             output.push({ key: pathKey, value: true });
@@ -142,7 +143,7 @@ export function mapToRows(input: Kv[], entityId: string): DbSearchRow[] {
   const result: DbSearchRow[] = [];
 
   for (const { key: rawKey, value: rawValue } of input) {
-    const key = rawKey.toLocaleLowerCase('en-US');
+    const key = rawKey.toLowerCase();
     if (key.length > MAX_KEY_LENGTH) {
       continue;
     }
@@ -154,7 +155,7 @@ export function mapToRows(input: Kv[], entityId: string): DbSearchRow[] {
         value: null,
       });
     } else {
-      const value = String(rawValue).toLocaleLowerCase('en-US');
+      const value = String(rawValue).toLowerCase();
       if (value.length <= MAX_VALUE_LENGTH) {
         result.push({
           entity_id: entityId,
@@ -213,11 +214,11 @@ export function buildEntitySearch(
   // This validates that there are no keys that vary only in casing, such
   // as `spec.foo` and `spec.Foo`.
   const keys = new Set(raw.map(r => r.key));
-  const lowerKeys = new Set(raw.map(r => r.key.toLocaleLowerCase('en-US')));
+  const lowerKeys = new Set(raw.map(r => r.key.toLowerCase()));
   if (keys.size !== lowerKeys.size) {
     const difference = [];
     for (const key of keys) {
-      const lower = key.toLocaleLowerCase('en-US');
+      const lower = key.toLowerCase();
       if (!lowerKeys.delete(lower)) {
         difference.push(lower);
       }
@@ -228,5 +229,16 @@ export function buildEntitySearch(
     );
   }
 
-  return mapToRows(raw, entityId);
+  const rows = mapToRows(raw, entityId);
+
+  // Deduplicate by (key, value). Duplicate array values in the entity data
+  // (e.g. tags: ['java', 'java']) produce identical search rows which would
+  // violate the unique constraint on (entity_id, key, value).
+  const seen = new Set<string>();
+  return rows.filter(row => {
+    const k = `${row.key}\0${row.value === null ? NULL_SENTINEL : row.value}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }

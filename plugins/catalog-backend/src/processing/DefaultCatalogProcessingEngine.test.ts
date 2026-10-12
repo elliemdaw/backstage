@@ -19,17 +19,21 @@ import { DateTime } from 'luxon';
 import waitForExpect from 'wait-for-expect';
 import { DefaultProcessingDatabase } from '../database/DefaultProcessingDatabase';
 import { DefaultCatalogProcessingEngine } from './DefaultCatalogProcessingEngine';
+import { markForStitching } from '../database/operations/stitcher/markForStitching';
 import { CatalogProcessingOrchestrator } from './types';
-import { Stitcher } from '../stitching/types';
 import { ConfigReader } from '@backstage/config';
 import { mockServices } from '@backstage/backend-test-utils';
 import { metricsServiceMock } from '@backstage/backend-test-utils/alpha';
+
+jest.mock('../database/operations/stitcher/markForStitching');
+const mockMarkForStitching = jest.mocked(markForStitching);
 
 describe('DefaultCatalogProcessingEngine', () => {
   const db = {
     transaction: jest.fn(),
     getProcessableEntities: jest.fn(),
     updateProcessedEntity: jest.fn(),
+    updateProcessedEntityErrors: jest.fn(),
     updateEntityCache: jest.fn(),
     listParents: jest.fn(),
     setRefreshKeys: jest.fn(),
@@ -37,9 +41,6 @@ describe('DefaultCatalogProcessingEngine', () => {
   const orchestrator: jest.Mocked<CatalogProcessingOrchestrator> = {
     process: jest.fn(),
   };
-  const stitcher = {
-    stitch: jest.fn(),
-  } as unknown as jest.Mocked<Stitcher>;
   const hash = {
     update: () => hash,
     digest: jest.fn(),
@@ -69,14 +70,14 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       createHash: () => hash,
       scheduler: mockServices.scheduler(),
       events: mockServices.events.mock(),
       metrics: metricsServiceMock.mock(),
     });
 
-    db.transaction.mockImplementation(cb => cb((() => {}) as any));
+    const tx = (() => {}) as any;
+    db.transaction.mockImplementation(cb => cb(tx));
 
     db.getProcessableEntities
       .mockImplementation(async () => {
@@ -101,7 +102,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       });
     db.listParents.mockResolvedValue({ entityRefs: [] });
     db.updateProcessedEntity.mockResolvedValue({
-      previous: { relations: [] },
+      relationsChange: { deleted: [], inserted: [] },
     });
 
     await engine.start();
@@ -114,6 +115,14 @@ describe('DefaultCatalogProcessingEngine', () => {
           metadata: { name: 'test' },
         },
         state: [], // State is forwarded as is, even if it's a bad format
+      });
+      expect(db.updateProcessedEntity).toHaveBeenCalledWith(
+        tx,
+        expect.anything(),
+      );
+      expect(mockMarkForStitching).toHaveBeenCalledWith({
+        knex: tx,
+        entityRefs: new Set(['location:default/test']),
       });
     });
     await engine.stop();
@@ -139,7 +148,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       events: mockServices.events.mock(),
@@ -172,7 +180,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       });
     db.listParents.mockResolvedValue({ entityRefs: [] });
     db.updateProcessedEntity.mockImplementation(async () => ({
-      previous: { relations: [] },
+      relationsChange: { deleted: [], inserted: [] },
     }));
 
     await engine.start();
@@ -188,6 +196,177 @@ describe('DefaultCatalogProcessingEngine', () => {
       });
     });
     await engine.stop();
+  });
+
+  it('stores processing errors and schedules stitching in one transaction', async () => {
+    const entity = {
+      apiVersion: '1',
+      kind: 'Location',
+      metadata: { name: 'test' },
+    };
+    orchestrator.process.mockResolvedValue({ ok: false, errors: [] });
+    hash.digest.mockReturnValue('new-result-hash');
+
+    const engine = new DefaultCatalogProcessingEngine({
+      config: new ConfigReader({}),
+      logger: mockServices.logger.mock(),
+      processingDatabase: db,
+      knex: { client: { config: { client: 'pg' } } } as any,
+      orchestrator,
+      createHash: () => hash,
+      scheduler: mockServices.scheduler(),
+      events: mockServices.events.mock(),
+      metrics: metricsServiceMock.mock(),
+    });
+    db.transaction.mockImplementation(cb => cb((() => {}) as any));
+    mockMarkForStitching
+      .mockRejectedValueOnce(
+        Object.assign(new Error('deadlock detected'), { code: '40P01' }),
+      )
+      .mockResolvedValue(undefined);
+    db.getProcessableEntities
+      .mockImplementation(async () => {
+        await engine.stop();
+        return { items: [] };
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            entityRef: 'location:default/test',
+            id: '1',
+            unprocessedEntity: entity,
+            resultHash: 'old-result-hash',
+            state: {},
+            nextUpdateAt: DateTime.now(),
+          },
+        ],
+      });
+
+    await engine.start();
+    await waitForExpect(() => {
+      const tx1 = db.updateProcessedEntityErrors.mock.calls[0]?.[0];
+      const tx2 = db.updateProcessedEntityErrors.mock.calls[1]?.[0];
+      expect(db.updateProcessedEntityErrors).toHaveBeenNthCalledWith(
+        1,
+        tx1,
+        expect.objectContaining({ id: '1', resultHash: 'new-result-hash' }),
+      );
+      expect(mockMarkForStitching).toHaveBeenNthCalledWith(1, {
+        knex: tx1,
+        entityRefs: ['location:default/test'],
+      });
+      expect(db.updateProcessedEntityErrors).toHaveBeenNthCalledWith(
+        2,
+        tx2,
+        expect.objectContaining({ id: '1', resultHash: 'new-result-hash' }),
+      );
+      expect(mockMarkForStitching).toHaveBeenNthCalledWith(2, {
+        knex: tx2,
+        entityRefs: ['location:default/test'],
+      });
+      expect(tx1).not.toBe(tx2);
+    });
+    await engine.stop();
+  });
+
+  it('recomputes changed relation sources when retrying a successful processing transaction', async () => {
+    const entity = {
+      apiVersion: '1',
+      kind: 'Location',
+      metadata: { name: 'test' },
+    };
+    orchestrator.process.mockResolvedValue({
+      ok: true,
+      completedEntity: entity,
+      relations: [],
+      errors: [],
+      deferredEntities: [],
+      state: {},
+      refreshKeys: [],
+    });
+    hash.digest.mockReturnValue('new-result-hash');
+    const engine = new DefaultCatalogProcessingEngine({
+      config: new ConfigReader({}),
+      logger: mockServices.logger.mock(),
+      processingDatabase: db,
+      knex: { client: { config: { client: 'pg' } } } as any,
+      orchestrator,
+      createHash: () => hash,
+      scheduler: mockServices.scheduler(),
+      events: mockServices.events.mock(),
+      metrics: metricsServiceMock.mock(),
+    });
+    db.transaction.mockImplementation(cb => cb((() => {}) as any));
+    db.listParents.mockResolvedValue({ entityRefs: [] });
+    const relation = (source: string) => ({
+      source_entity_ref: source,
+      target_entity_ref: 'location:default/test',
+      type: 'hasPart',
+    });
+    db.updateProcessedEntity
+      .mockResolvedValueOnce({
+        relationsChange: {
+          deleted: [relation('component:default/rolled-back')],
+          inserted: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        relationsChange: {
+          deleted: [relation('component:default/removed')],
+          inserted: [relation('component:default/added')],
+        },
+      });
+    mockMarkForStitching
+      .mockRejectedValueOnce(
+        Object.assign(new Error('deadlock detected'), { code: '40P01' }),
+      )
+      .mockResolvedValue(undefined);
+    db.getProcessableEntities
+      .mockImplementation(async () => {
+        await engine.stop();
+        return { items: [] };
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            entityRef: 'location:default/test',
+            id: '1',
+            unprocessedEntity: entity,
+            resultHash: 'old-result-hash',
+            state: {},
+            nextUpdateAt: DateTime.now(),
+          },
+        ],
+      });
+
+    try {
+      await engine.start();
+      await waitForExpect(() => {
+        expect(mockMarkForStitching).toHaveBeenCalledTimes(2);
+        expect(db.updateProcessedEntity).toHaveBeenCalledTimes(2);
+        const tx1 = db.updateProcessedEntity.mock.calls[0][0];
+        const tx2 = db.updateProcessedEntity.mock.calls[1][0];
+        expect(tx1).not.toBe(tx2);
+        expect(mockMarkForStitching).toHaveBeenNthCalledWith(1, {
+          knex: tx1,
+          entityRefs: new Set([
+            'location:default/test',
+            'component:default/rolled-back',
+          ]),
+        });
+        expect(mockMarkForStitching).toHaveBeenNthCalledWith(2, {
+          knex: tx2,
+          entityRefs: new Set([
+            'location:default/test',
+            'component:default/removed',
+            'component:default/added',
+          ]),
+        });
+        expect(orchestrator.process).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      await engine.stop();
+    }
   });
 
   it('runs fully when hash mismatches, early-outs when hash matches', async () => {
@@ -225,7 +404,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       events: mockServices.events.mock(),
@@ -241,7 +419,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       })
       .mockResolvedValue({ items: [] });
     db.updateProcessedEntity.mockImplementation(async () => ({
-      previous: { relations: [] },
+      relationsChange: { deleted: [], inserted: [] },
     }));
 
     await engine.start();
@@ -251,6 +429,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       expect(hash.digest).toHaveBeenCalledTimes(1);
       expect(db.updateProcessedEntity).toHaveBeenCalledTimes(1);
       expect(db.listParents).toHaveBeenCalledTimes(1);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(1);
     });
     expect(db.updateEntityCache).not.toHaveBeenCalled();
 
@@ -267,6 +446,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       expect(db.updateProcessedEntity).toHaveBeenCalledTimes(1);
       expect(db.updateEntityCache).toHaveBeenCalledTimes(1);
       expect(db.listParents).toHaveBeenCalledTimes(2);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(1);
     });
     expect(db.updateEntityCache).toHaveBeenCalledWith(expect.anything(), {
       id: '',
@@ -305,7 +485,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       events: mockServices.events.mock(),
@@ -323,7 +502,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       .mockResolvedValue({ items: [] });
     db.listParents.mockResolvedValue({ entityRefs: [] });
     db.updateProcessedEntity.mockImplementation(async () => ({
-      previous: { relations: [] },
+      relationsChange: { deleted: [], inserted: [] },
     }));
 
     await waitForExpect(() => {
@@ -367,7 +546,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       pollingIntervalMs: 100,
@@ -402,21 +580,35 @@ describe('DefaultCatalogProcessingEngine', () => {
       });
     db.updateProcessedEntity
       .mockImplementationOnce(async () => ({
-        previous: { relations: [] },
-      }))
-      .mockImplementationOnce(async () => ({
-        previous: {
-          relations: [
+        relationsChange: {
+          deleted: [],
+          inserted: [
             {
-              originating_entity_id: '',
-              type: 't',
               source_entity_ref: 'k:ns/other1',
+              type: 't',
               target_entity_ref: 'k:ns/me',
             },
             {
-              originating_entity_id: '',
-              type: 't',
               source_entity_ref: 'k:ns/other2',
+              type: 't',
+              target_entity_ref: 'k:ns/me',
+            },
+          ],
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        relationsChange: {
+          deleted: [
+            {
+              source_entity_ref: 'k:ns/other1',
+              type: 't',
+              target_entity_ref: 'k:ns/me',
+            },
+          ],
+          inserted: [
+            {
+              source_entity_ref: 'k:ns/other3',
+              type: 't',
               target_entity_ref: 'k:ns/me',
             },
           ],
@@ -467,12 +659,12 @@ describe('DefaultCatalogProcessingEngine', () => {
 
     await engine.start();
     await waitForExpect(() => {
-      expect(stitcher.stitch).toHaveBeenCalledTimes(2);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(2);
     });
-    expect([...stitcher.stitch.mock.calls[0][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[0][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other1', 'k:ns/other2']),
     );
-    expect([...stitcher.stitch.mock.calls[1][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[1][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other1', 'k:ns/other3']),
     );
     await engine.stop();
@@ -485,7 +677,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       pollingIntervalMs: 100,
@@ -520,16 +711,31 @@ describe('DefaultCatalogProcessingEngine', () => {
       });
     db.updateProcessedEntity
       .mockImplementationOnce(async () => ({
-        previous: { relations: [] },
+        relationsChange: {
+          deleted: [],
+          inserted: [
+            {
+              source_entity_ref: 'k:ns/other1',
+              type: 't',
+              target_entity_ref: 'k:ns/me',
+            },
+          ],
+        },
       }))
       .mockImplementationOnce(async () => ({
-        previous: {
-          relations: [
+        relationsChange: {
+          deleted: [
             {
-              originating_entity_id: '',
-              type: 't',
               source_entity_ref: 'k:ns/other1',
+              type: 't',
               target_entity_ref: 'k:ns/me',
+            },
+          ],
+          inserted: [
+            {
+              source_entity_ref: 'k:ns/other1',
+              type: 't',
+              target_entity_ref: 'k:ns/newtarget',
             },
           ],
         },
@@ -572,15 +778,15 @@ describe('DefaultCatalogProcessingEngine', () => {
 
     await engine.start();
     await waitForExpect(() => {
-      expect(stitcher.stitch).toHaveBeenCalledTimes(2);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(2);
     });
-    expect([...stitcher.stitch.mock.calls[0][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[0][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other1']),
     );
     // As a result of switching the relationship for source other1 to
     // a new target entity, the other1 relationship source must be
     // restitched.
-    expect([...stitcher.stitch.mock.calls[1][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[1][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other1']),
     );
     await engine.stop();
@@ -593,7 +799,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       pollingIntervalMs: 100,
@@ -623,22 +828,7 @@ describe('DefaultCatalogProcessingEngine', () => {
       items: [processableEntity],
     });
     db.updateProcessedEntity.mockImplementationOnce(async () => ({
-      previous: {
-        relations: [
-          {
-            originating_entity_id: '',
-            type: 't',
-            source_entity_ref: 'k:ns/other1',
-            target_entity_ref: 'k:ns/me',
-          },
-          {
-            originating_entity_id: '',
-            type: 't',
-            source_entity_ref: 'k:ns/other2',
-            target_entity_ref: 'k:ns/me',
-          },
-        ],
-      },
+      relationsChange: { deleted: [], inserted: [] },
     }));
 
     orchestrator.process.mockResolvedValueOnce({
@@ -664,11 +854,11 @@ describe('DefaultCatalogProcessingEngine', () => {
 
     await engine.start();
     await waitForExpect(() => {
-      expect(stitcher.stitch).toHaveBeenCalledTimes(1);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(1);
     });
-    expect([...stitcher.stitch.mock.calls[0][0].entityRefs!]).toEqual(
-      expect.arrayContaining(['k:ns/me']),
-    );
+    expect([...mockMarkForStitching.mock.calls[0][0].entityRefs!]).toEqual([
+      'k:ns/me',
+    ]);
     await engine.stop();
   });
 
@@ -679,7 +869,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       pollingIntervalMs: 100,
@@ -709,18 +898,12 @@ describe('DefaultCatalogProcessingEngine', () => {
       items: [processableEntity],
     });
     db.updateProcessedEntity.mockImplementationOnce(async () => ({
-      previous: {
-        relations: [
+      relationsChange: {
+        deleted: [],
+        inserted: [
           {
-            originating_entity_id: '',
-            type: 't',
-            source_entity_ref: 'k:ns/other1',
-            target_entity_ref: 'k:ns/me',
-          },
-          {
-            originating_entity_id: '',
-            type: 't',
             source_entity_ref: 'k:ns/other2',
+            type: 'u',
             target_entity_ref: 'k:ns/me',
           },
         ],
@@ -755,9 +938,9 @@ describe('DefaultCatalogProcessingEngine', () => {
 
     await engine.start();
     await waitForExpect(() => {
-      expect(stitcher.stitch).toHaveBeenCalledTimes(1);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(1);
     });
-    expect([...stitcher.stitch.mock.calls[0][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[0][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other2']),
     );
     await engine.stop();
@@ -770,7 +953,6 @@ describe('DefaultCatalogProcessingEngine', () => {
       processingDatabase: db,
       knex: {} as any,
       orchestrator: orchestrator,
-      stitcher: stitcher,
       scheduler: mockServices.scheduler(),
       createHash: () => hash,
       pollingIntervalMs: 100,
@@ -800,21 +982,15 @@ describe('DefaultCatalogProcessingEngine', () => {
       items: [processableEntity],
     });
     db.updateProcessedEntity.mockImplementationOnce(async () => ({
-      previous: {
-        relations: [
+      relationsChange: {
+        deleted: [
           {
-            originating_entity_id: '',
-            type: 't',
-            source_entity_ref: 'k:ns/other1',
-            target_entity_ref: 'k:ns/me',
-          },
-          {
-            originating_entity_id: '',
-            type: 't',
             source_entity_ref: 'k:ns/other2',
+            type: 't',
             target_entity_ref: 'k:ns/me',
           },
         ],
+        inserted: [],
       },
     }));
 
@@ -836,9 +1012,9 @@ describe('DefaultCatalogProcessingEngine', () => {
 
     await engine.start();
     await waitForExpect(() => {
-      expect(stitcher.stitch).toHaveBeenCalledTimes(1);
+      expect(mockMarkForStitching).toHaveBeenCalledTimes(1);
     });
-    expect([...stitcher.stitch.mock.calls[0][0].entityRefs!]).toEqual(
+    expect([...mockMarkForStitching.mock.calls[0][0].entityRefs!]).toEqual(
       expect.arrayContaining(['k:ns/me', 'k:ns/other2']),
     );
     await engine.stop();

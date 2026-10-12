@@ -24,15 +24,13 @@ describe('HighlightedSearchResultText', () => {
       <HighlightedSearchResultText
         preTag="<tag>"
         postTag="</tag>"
-        text="test <tag>highlighted</tag> restult <tag>text</tag>"
+        text="test <tag>highlighted</tag> result <tag>text</tag>"
       />,
     );
 
-    expect(
-      screen.getByText('highlighted').tagName.toLocaleLowerCase('en-US'),
-    ).toEqual('mark');
-    expect(screen.getByText('text').tagName.toLocaleLowerCase('en-US')).toEqual(
+    expect(screen.getByText('highlighted').tagName.toLowerCase()).toEqual(
       'mark',
     );
+    expect(screen.getByText('text').tagName.toLowerCase()).toEqual('mark');
   });
 });

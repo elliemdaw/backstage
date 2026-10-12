@@ -15,12 +15,9 @@
  */
 
 import { JsonObject } from '@backstage/types';
-import { reduceKindSchema } from '../jsonSchema/reduceKindSchema';
-import { validateKindRootSchemaSemantics } from '../jsonSchema/validateKindRootSchemaSemantics';
-import { validateMetaSchema } from '../jsonSchema/validateMetaSchema';
 import { CatalogModelOp } from '../operations';
 import { createDeclareKindOp } from '../operations/declareKind';
-import { createDeclareKindVersionOp } from '../operations/declareKindVersion';
+import { opsFromCatalogModelAddKindVersion } from './addKindVersion';
 
 /**
  * The definition of a catalog model kind, roughly resembling a JSON Schema.
@@ -111,6 +108,11 @@ export interface CatalogModelKindVersionDefinition {
    */
   relationFields?: CatalogModelKindRelationFieldDefinition[];
 
+  /**
+   * The entity schema, excluding the generated kind, apiVersion, and metadata
+   * fields. Its root type must be `object` or omitted; an omitted root type is
+   * supplied during compilation.
+   */
   schema: {
     jsonSchema: JsonObject;
   };
@@ -168,33 +170,12 @@ export function opsFromCatalogModelKind(
     }),
   );
 
-  for (const version of kind.versions ?? []) {
-    const jsonSchema = reduceKindSchema(version.schema.jsonSchema);
-    validateMetaSchema(jsonSchema);
-    validateKindRootSchemaSemantics(jsonSchema);
-    const names = Array.isArray(version.name) ? version.name : [version.name];
-    for (const name of names) {
-      const specTypes = version.specType
-        ? [version.specType].flat()
-        : [undefined];
-      for (const specType of specTypes) {
-        ops.push(
-          createDeclareKindVersionOp({
-            kind: kind.names.kind,
-            name,
-            specType: specType,
-            properties: {
-              description: version.description,
-              relationFields: version.relationFields,
-              schema: {
-                jsonSchema: jsonSchema as any,
-              },
-            },
-          }),
-        );
-      }
-    }
-  }
+  ops.push(
+    ...opsFromCatalogModelAddKindVersion({
+      kind: kind.names.kind,
+      versions: kind.versions ?? [],
+    }),
+  );
 
   return ops;
 }

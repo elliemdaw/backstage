@@ -187,6 +187,24 @@ function validateMetadata(
   }
 }
 
+async function readCappedResponseBody(response: Response): Promise<string> {
+  if (!response.body) {
+    return '';
+  }
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of response.body) {
+    received += chunk.byteLength;
+    if (received > MAX_RESPONSE_BYTES) {
+      throw new InputError('Client metadata document too large');
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /**
  * Fetches and validates a CIMD metadata document.
  * @throws InputError if fetching or validation fails
@@ -194,14 +212,16 @@ function validateMetadata(
 export async function fetchCimdMetadata(opts: {
   clientId: string;
   validatedUrl?: URL;
+  skipSsrfCheck?: boolean;
 }): Promise<CimdClientInfo> {
   const url = opts.validatedUrl ?? validateCimdUrl(opts.clientId);
 
-  // Skip SSRF validation for localhost in development only
+  // Skip SSRF validation for localhost in development, or when the caller
+  // has determined the client_id matched an exact (non-wildcard) pattern.
   const isLocalhostDev =
     (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
     process.env.NODE_ENV === 'development';
-  if (!isLocalhostDev) {
+  if (!isLocalhostDev && !opts.skipSsrfCheck) {
     await validateHostNotPrivate(url.hostname);
   }
 
@@ -228,8 +248,12 @@ export async function fetchCimdMetadata(opts: {
 
   let metadata: CimdMetadata;
   try {
-    metadata = await response.json();
-  } catch {
+    const responseBody = await readCappedResponseBody(response);
+    metadata = JSON.parse(responseBody) as CimdMetadata;
+  } catch (error) {
+    if (isError(error) && error.name === 'InputError') {
+      throw error;
+    }
     throw new InputError('Invalid client metadata document');
   }
 

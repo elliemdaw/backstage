@@ -39,13 +39,13 @@ import {
   repoOwnerPickerFormField,
   repoUrlPickerFormField,
   scaffolderApi,
-  scaffolderNavItem,
   scaffolderPage,
   scaffolderTemplatesSubPage,
   scaffolderTasksSubPage,
   scaffolderActionsSubPage,
   scaffolderEditorSubPage,
   scaffolderTemplatingExtensionsSubPage,
+  scaffolderFeaturedTemplatesWidget,
 } from './extensions';
 import { isTemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import { formFieldsApi } from './formFieldsApi';
@@ -89,7 +89,7 @@ export default createFrontendPlugin({
     scaffolderActionsSubPage,
     scaffolderEditorSubPage,
     scaffolderTemplatingExtensionsSubPage,
-    scaffolderNavItem,
+    scaffolderFeaturedTemplatesWidget,
     scaffolderEntityIconLink,
     formDecoratorsApi,
     formFieldsApi,

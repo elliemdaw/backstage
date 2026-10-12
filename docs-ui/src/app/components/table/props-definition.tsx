@@ -61,7 +61,8 @@ export const useTableOptionsPropDefs: Record<string, PropDef> = {
         },
         pageSizeOptions: {
           type: 'number[]',
-          description: 'Available page size options for the dropdown.',
+          description:
+            'Available page size options for the dropdown. Pass an empty array to hide the dropdown.',
         },
         initialOffset: {
           type: 'number',
@@ -154,6 +155,28 @@ export const useTableOptionsPropDefs: Record<string, PropDef> = {
     description: (
       <>
         Client-side filter function. Only used with <Chip>complete</Chip> mode.
+      </>
+    ),
+  },
+  searchDebounceMs: {
+    type: 'number',
+    description: (
+      <>
+        Trailing-edge debounce delay (ms) applied to the search value before it
+        reaches <Chip>searchFn</Chip>. Defaults to <Chip>0</Chip> (no debounce).
+        Does not affect the controlled <Chip>onSearchChange</Chip> callback.
+        Only used with <Chip>complete</Chip> mode.
+      </>
+    ),
+  },
+  filterDebounceMs: {
+    type: 'number',
+    description: (
+      <>
+        Trailing-edge debounce delay (ms) applied to the filter value before it
+        reaches <Chip>filterFn</Chip>. Defaults to <Chip>0</Chip> (no debounce).
+        Does not affect the controlled <Chip>onFilterChange</Chip> callback.
+        Only used with <Chip>complete</Chip> mode.
       </>
     ),
   },
@@ -400,12 +423,14 @@ export const cellProfilePropDefs: Record<string, PropDef> = {
 export const tablePaginationPropDefs: Record<string, PropDef> = {
   pageSize: {
     type: 'number',
-    description: 'Number of items per page.',
+    description:
+      'Controlled number of items per page. Update this value in response to `onPageSizeChange`.',
   },
   pageSizeOptions: {
     type: 'enum',
     values: ['number[]'],
-    description: 'Available page size options for the dropdown.',
+    description:
+      'Available page size options for the dropdown. Pass an empty array to hide the dropdown.',
   },
   offset: {
     type: 'number',

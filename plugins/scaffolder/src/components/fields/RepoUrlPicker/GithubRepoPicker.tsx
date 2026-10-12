@@ -16,24 +16,33 @@
 import { useCallback, useMemo, useState } from 'react';
 import FormControl from '@material-ui/core/FormControl';
 import FormHelperText from '@material-ui/core/FormHelperText';
-import TextField from '@material-ui/core/TextField';
-import { Select, SelectItem } from '@backstage/core-components';
+import MuiTextField from '@material-ui/core/TextField';
+import { Select as MuiSelect, SelectItem } from '@backstage/core-components';
 import { BaseRepoUrlPickerProps } from './types';
 import { useTranslationRef } from '@backstage/core-plugin-api/alpha';
 import { scaffolderTranslationRef } from '../../../translation';
 import { useApi } from '@backstage/core-plugin-api';
 import { scaffolderApiRef } from '@backstage/plugin-scaffolder-react';
 import useDebounce from 'react-use/esm/useDebounce';
-import Autocomplete from '@material-ui/lab/Autocomplete';
+import MuiAutocomplete from '@material-ui/lab/Autocomplete';
 import uniq from 'lodash/uniq';
 import map from 'lodash/map';
+import { useScaffolderTheme } from '@backstage/plugin-scaffolder-react/alpha';
+import { Select as BuiSelect } from '@backstage/ui';
+import { Autocomplete as BuiAutocomplete } from '../Autocomplete';
+import overrides from '../scaffolderFieldOverrides.module.css';
+import type { Key } from 'react-aria-components';
 
 export const GithubRepoPicker = (
   props: BaseRepoUrlPickerProps<{
     allowedOwners?: string[];
     accessToken?: string;
+    ownerLabel?: string;
+    ownerDescription?: string;
+    disableRepoAutocomplete?: boolean;
   }>,
 ) => {
+  const theme = useScaffolderTheme();
   const {
     allowedOwners = [],
     rawErrors,
@@ -41,11 +50,11 @@ export const GithubRepoPicker = (
     onChange,
     accessToken,
     isDisabled,
+    ownerLabel,
+    ownerDescription,
+    disableRepoAutocomplete,
   } = props;
   const { t } = useTranslationRef(scaffolderTranslationRef);
-  const ownerItems: SelectItem[] = allowedOwners
-    ? allowedOwners.map(i => ({ label: i, value: i }))
-    : [{ label: 'Loading...', value: 'loading' }];
 
   const { host, owner } = state;
 
@@ -54,7 +63,6 @@ export const GithubRepoPicker = (
   const [availableRepositoriesWithOwner, setAvailableRepositoriesWithOwner] =
     useState<{ owner: string; name: string }[]>([]);
 
-  // Update available repositories with owner when client is available
   const updateAvailableRepositoriesWithOwner = useCallback(() => {
     if (!scaffolderApi.autocomplete || !accessToken || !host) {
       setAvailableRepositoriesWithOwner([]);
@@ -93,14 +101,76 @@ export const GithubRepoPicker = (
 
   // Update available repositories when available repositories with owner change or when owner changes
   const updateAvailableRepositories = useCallback(() => {
+    // Only surface repository suggestions when repo autocomplete is enabled.
+    // Owner suggestions are still derived from the fetch above.
+    if (disableRepoAutocomplete) {
+      onChange({ availableRepos: [] });
+      return;
+    }
+
     const availableRepos = availableRepositoriesWithOwner.flatMap(r =>
       r.owner === owner ? [{ name: r.name }] : [],
     );
 
     onChange({ availableRepos });
-  }, [availableRepositoriesWithOwner, owner, onChange]);
+  }, [
+    disableRepoAutocomplete,
+    availableRepositoriesWithOwner,
+    owner,
+    onChange,
+  ]);
 
   useDebounce(updateAvailableRepositories, 500, [updateAvailableRepositories]);
+
+  if (theme === 'bui') {
+    if (allowedOwners?.length) {
+      const ownerItems = allowedOwners.map(i => ({ label: i, value: i }));
+
+      return (
+        <BuiSelect
+          className={overrides.select}
+          label={ownerLabel ?? t('fields.githubRepoPicker.owner.title')}
+          description={
+            ownerDescription ?? t('fields.githubRepoPicker.owner.description')
+          }
+          isDisabled={isDisabled || allowedOwners.length === 1}
+          isInvalid={rawErrors?.length > 0 && !owner}
+          selectedKey={owner ?? null}
+          onSelectionChange={(key: Key | null) => {
+            if (key !== null) onChange({ owner: String(key) });
+          }}
+          options={ownerItems}
+          isRequired
+        />
+      );
+    }
+
+    const options = availableOwners.map(o => ({ label: o, value: o }));
+
+    return (
+      <BuiAutocomplete
+        label={ownerLabel ?? t('fields.githubRepoPicker.owner.inputTitle')}
+        description={
+          ownerDescription ?? t('fields.githubRepoPicker.owner.description')
+        }
+        inputValue={owner ?? ''}
+        onInputChange={value => onChange({ owner: value })}
+        onSelectionChange={(key: Key | null) => {
+          if (key !== null) {
+            onChange({ owner: String(key) });
+          }
+        }}
+        options={options}
+        isDisabled={isDisabled}
+        isRequired
+        isInvalid={rawErrors?.length > 0 && !owner}
+      />
+    );
+  }
+
+  const ownerItems: SelectItem[] = allowedOwners
+    ? allowedOwners.map(i => ({ label: i, value: i }))
+    : [{ label: 'Loading...', value: 'loading' }];
 
   return (
     <>
@@ -111,9 +181,9 @@ export const GithubRepoPicker = (
       >
         {allowedOwners?.length ? (
           <>
-            <Select
+            <MuiSelect
               native
-              label={t('fields.githubRepoPicker.owner.title')}
+              label={ownerLabel ?? t('fields.githubRepoPicker.owner.title')}
               onChange={s =>
                 onChange({ owner: String(Array.isArray(s) ? s[0] : s) })
               }
@@ -123,16 +193,18 @@ export const GithubRepoPicker = (
             />
           </>
         ) : (
-          <Autocomplete
+          <MuiAutocomplete
             value={owner}
             onChange={(_, newValue) => {
               onChange({ owner: newValue || '' });
             }}
             options={availableOwners}
             renderInput={params => (
-              <TextField
+              <MuiTextField
                 {...params}
-                label={t('fields.githubRepoPicker.owner.inputTitle')}
+                label={
+                  ownerLabel ?? t('fields.githubRepoPicker.owner.inputTitle')
+                }
                 disabled={isDisabled}
                 required
               />
@@ -143,7 +215,7 @@ export const GithubRepoPicker = (
           />
         )}
         <FormHelperText>
-          {t('fields.githubRepoPicker.owner.description')}
+          {ownerDescription ?? t('fields.githubRepoPicker.owner.description')}
         </FormHelperText>
       </FormControl>
     </>

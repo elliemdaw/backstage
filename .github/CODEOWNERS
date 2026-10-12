@@ -5,8 +5,6 @@
 # https://help.github.com/articles/about-codeowners/
 
 *                                                 @backstage/maintainers
-yarn.lock                                         @backstage/maintainers @backstage-service
-*/yarn.lock                                       @backstage/maintainers @backstage-service
 /.changeset                                       @backstage/operations-maintainers
 /.changeset/*.md
 /.github                                          @backstage/operations-maintainers
@@ -58,6 +56,7 @@ yarn.lock                                         @backstage/maintainers @backst
 /plugins/catalog-backend-module-backstage-openapi @backstage/maintainers @backstage/openapi-tooling-maintainers
 /plugins/catalog-backend-module-gitea             @backstage/maintainers @backstage/catalog-maintainers
 /plugins/catalog-backend-module-msgraph           @backstage/maintainers @backstage/catalog-maintainers @pjungermann
+/plugins/catalog-backend-module-msgraph-incremental @backstage/maintainers @backstage/catalog-maintainers
 /plugins/catalog-backend-module-puppetdb          @backstage/maintainers @backstage/catalog-maintainers
 /plugins/catalog-graph                            @backstage/maintainers @backstage/catalog-maintainers @backstage/sda-se-reviewers
 /plugins/devtools                                 @backstage/maintainers @awanlin
@@ -85,8 +84,12 @@ yarn.lock                                         @backstage/maintainers @backst
 /plugins/user-settings-common                     @backstage/maintainers @backstage/sda-se-reviewers
 
 /scripts                                          @backstage/operations-maintainers
+/workspaces/ui                                    @backstage/design-system-maintainers
 
 /packages/backend-plugin-api/src/services/definitions/AuditorService.ts   @backstage/maintainers @backstage/auditor-maintainers
 /packages/backend-defaults/src/entrypoints/auditor                        @backstage/maintainers @backstage/auditor-maintainers
 /packages/backend-defaults/report-auditor.api.md                          @backstage/maintainers @backstage/auditor-maintainers
 /docs/backend-system/core-services/auditor.md                             @backstage/maintainers @backstage/auditor-maintainers @backstage/documentation-maintainers
+
+# Keep this rule last so that directory-specific ownership does not override it.
+**/yarn.lock                                      @backstage/maintainers @backstage-service

@@ -458,6 +458,18 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
       return;
     }
 
+    const targetBranch =
+      this.config.branch ??
+      event.project.default_branch ??
+      this.config.fallbackBranch;
+
+    if (targetBranch && event.ref !== `refs/heads/${targetBranch}`) {
+      this.logger.debug(
+        `Skipping push event for ${event.project.path_with_namespace} targeting ${event.ref}`,
+      );
+      return;
+    }
+
     // Get array of added, removed or modified files from the push event
     const added = this.getFilesMatchingConfig(
       event,
@@ -476,12 +488,12 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
     );
 
     // Modified files will be scheduled to a refresh
-    const addedEntities = this.createLocationSpecCommitedFiles(
+    const addedEntities = this.createLocationSpecCommittedFiles(
       event.project,
       added,
     );
 
-    const removedEntities = this.createLocationSpecCommitedFiles(
+    const removedEntities = this.createLocationSpecCommittedFiles(
       event.project,
       removed,
     );
@@ -563,7 +575,7 @@ export class GitlabDiscoveryEntityProvider implements EntityProvider {
    * @param addedFiles - The array of added file paths.
    * @returns An array of location specs.
    */
-  private createLocationSpecCommitedFiles(
+  private createLocationSpecCommittedFiles(
     project: WebhookProjectSchema,
     addedFiles: string[],
   ): LocationSpec[] {

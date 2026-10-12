@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-import {
-  mockServices,
-  TestDatabaseId,
-  TestDatabases,
-} from '@backstage/backend-test-utils';
+import { mockServices, TestDatabases } from '@backstage/backend-test-utils';
 import { Entity, stringifyEntityRef } from '@backstage/catalog-model';
 import { Knex } from 'knex';
 import { randomUUID as uuid } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { DefaultProviderDatabase } from './DefaultProviderDatabase';
 import { applyDatabaseMigrations } from './migrations';
 import { DbRefreshStateReferencesRow, DbRefreshStateRow } from './tables';
@@ -30,54 +27,203 @@ import { generateStableHash } from './util';
 
 jest.setTimeout(60_000);
 
-describe('DefaultProviderDatabase', () => {
-  const defaultLogger = mockServices.logger.mock();
-  const databases = TestDatabases.create();
+const databases = TestDatabases.create();
 
-  async function createDatabase(
-    databaseId: TestDatabaseId,
-    logger: LoggerService = defaultLogger,
-  ) {
-    const knex = await databases.init(databaseId);
-    await applyDatabaseMigrations(knex);
-    return {
-      knex,
-      db: new DefaultProviderDatabase({
-        database: knex,
-        logger,
-      }),
-    };
-  }
-
-  const insertRefRow = async (db: Knex, ref: DbRefreshStateReferencesRow) => {
-    return db<DbRefreshStateReferencesRow>('refresh_state_references').insert(
-      ref,
-    );
-  };
-
-  const insertRefreshStateRow = async (db: Knex, ref: DbRefreshStateRow) => {
-    await db<DbRefreshStateRow>('refresh_state').insert(ref);
-  };
-
-  const createLocations = async (db: Knex, entityRefs: string[]) => {
-    for (const ref of entityRefs) {
-      await insertRefreshStateRow(db, {
-        entity_id: uuid(),
-        entity_ref: ref,
-        unprocessed_entity: '{}',
-        processed_entity: '{}',
-        errors: '[]',
-        next_update_at: '2021-04-01 13:37:00',
-        last_discovery_at: '2021-04-01 13:37:00',
+describe('DefaultProviderDatabase mutation preparation', () => {
+  it.each(['full', 'delta'] as const)(
+    'yields to the event loop while preparing large %s mutations',
+    async type => {
+      let eventLoopTurnCompleted = false;
+      const db = new DefaultProviderDatabase({
+        database: {} as Knex,
+        logger: mockServices.logger.mock(),
       });
-    }
-  };
+      setImmediate(() => {
+        eventLoopTurnCompleted = true;
+      });
+      let currentTime = 0;
+      const nowSpy = jest
+        .spyOn(performance, 'now')
+        .mockImplementation(() => currentTime++);
 
-  describe('replaceUnprocessedEntities', () => {
-    it.each(databases.eachSupportedId())(
-      'replaces all existing state correctly for simple dependency chains, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      try {
+        const items = Array.from({ length: 10 }, (_, index) => ({
+          entity: {
+            apiVersion: 'backstage.io/v1alpha1',
+            kind: 'Component',
+            metadata: { name: `component-${index}` },
+          },
+        }));
+        const prepared = await db.prepareUnprocessedEntities(
+          type === 'full'
+            ? { type, sourceKey: 'test', items }
+            : { type, sourceKey: 'test', added: items, removed: [] },
+        );
+        expect(prepared.preparedItems).toHaveLength(items.length);
+      } finally {
+        nowSpy.mockRestore();
+      }
+
+      expect(eventLoopTurnCompleted).toBe(true);
+    },
+  );
+
+  it('yields while normalizing a large removal-only delta', async () => {
+    let eventLoopTurnCompleted = false;
+    const db = new DefaultProviderDatabase({
+      database: {} as Knex,
+      logger: mockServices.logger.mock(),
+    });
+    setImmediate(() => {
+      eventLoopTurnCompleted = true;
+    });
+    let currentTime = 0;
+    const nowSpy = jest
+      .spyOn(performance, 'now')
+      .mockImplementation(() => currentTime++);
+
+    try {
+      const removed = Array.from({ length: 10 }, (_, index) => ({
+        entity: {
+          apiVersion: 'backstage.io/v1alpha1',
+          kind: 'Component',
+          metadata: { name: `component-${index}` },
+        },
+      }));
+      const prepared = await db.prepareUnprocessedEntities({
+        type: 'delta',
+        sourceKey: 'test',
+        added: [],
+        removed,
+      });
+      if (prepared.type !== 'delta') {
+        throw new Error('Expected a prepared delta mutation');
+      }
+
+      expect(prepared.removed).toEqual(
+        removed.map((_, index) => ({
+          entityRef: `component:default/component-${index}`,
+          locationKey: undefined,
+        })),
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(eventLoopTurnCompleted).toBe(true);
+  });
+
+  it('does not yield while copying already normalized removals', async () => {
+    let eventLoopTurnCompleted = false;
+    const eventLoopTurn = new Promise<void>(resolve => {
+      setImmediate(() => {
+        eventLoopTurnCompleted = true;
+        resolve();
+      });
+    });
+    const db = new DefaultProviderDatabase({
+      database: {} as Knex,
+      logger: mockServices.logger.mock(),
+    });
+    let currentTime = 0;
+    const nowSpy = jest
+      .spyOn(performance, 'now')
+      .mockImplementation(() => currentTime++);
+
+    try {
+      const removed = Array.from({ length: 10 }, (_, index) => ({
+        entityRef: `component:default/component-${index}`,
+      }));
+      const prepared = await db.prepareUnprocessedEntities({
+        type: 'delta',
+        sourceKey: 'test',
+        added: [],
+        removed,
+      });
+      if (prepared.type !== 'delta') {
+        throw new Error('Expected a prepared delta mutation');
+      }
+
+      expect(prepared.removed).toEqual(removed);
+      expect(eventLoopTurnCompleted).toBe(false);
+    } finally {
+      nowSpy.mockRestore();
+      await eventLoopTurn;
+    }
+  });
+});
+
+describe.each(databases.eachSupportedId())(
+  'DefaultProviderDatabase, %p',
+  databaseId => {
+    const defaultLogger = mockServices.logger.mock();
+
+    async function createDatabase(logger: LoggerService = defaultLogger) {
+      const knex = await databases.init(databaseId);
+      await applyDatabaseMigrations(knex);
+      return {
+        knex,
+        db: new DefaultProviderDatabase({
+          database: knex,
+          logger,
+        }),
+      };
+    }
+
+    const insertRefRow = async (db: Knex, ref: DbRefreshStateReferencesRow) => {
+      return db<DbRefreshStateReferencesRow>('refresh_state_references').insert(
+        ref,
+      );
+    };
+
+    const insertRefreshStateRow = async (db: Knex, ref: DbRefreshStateRow) => {
+      await db<DbRefreshStateRow>('refresh_state').insert(ref);
+    };
+
+    const createLocations = async (db: Knex, entityRefs: string[]) => {
+      for (const ref of entityRefs) {
+        await insertRefreshStateRow(db, {
+          entity_id: uuid(),
+          entity_ref: ref,
+          unprocessed_entity: '{}',
+          processed_entity: '{}',
+          errors: '[]',
+          next_update_at: '2021-04-01 13:37:00',
+          last_discovery_at: '2021-04-01 13:37:00',
+        });
+      }
+    };
+
+    describe('replaceUnprocessedEntities', () => {
+      it('reuses prepared entity references while writing', async () => {
+        const { knex, db } = await createDatabase();
+        const prepared = await db.prepareUnprocessedEntities({
+          type: 'full',
+          sourceKey: 'test',
+          items: [
+            {
+              entity: {
+                apiVersion: 'backstage.io/v1alpha1',
+                kind: 'Component',
+                metadata: { name: 'test' },
+              },
+            },
+          ],
+        });
+        if (prepared.type !== 'full' || !prepared.preparedItems) {
+          throw new Error('Expected a prepared full mutation');
+        }
+        prepared.preparedItems[0].entityRef = 'component:default/prepared';
+
+        await db.transaction(tx => db.replaceUnprocessedEntities(tx, prepared));
+
+        await expect(
+          knex<DbRefreshStateRow>('refresh_state').pluck('entity_ref'),
+        ).resolves.toEqual(['component:default/prepared']);
+      });
+
+      it('replaces all existing state correctly for simple dependency chains', async () => {
+        const { knex, db } = await createDatabase();
         /*
         config -> location:default/root -> location:default/root-1 -> location:default/root-2
         database -> location:default/second -> location:default/root-2
@@ -187,13 +333,10 @@ describe('DefaultProviderDatabase', () => {
               t.source_key === 'config',
           ),
         ).toBeTruthy();
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should work for more complex chains, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should work for more complex chains', async () => {
+        const { knex, db } = await createDatabase();
         /*
         config -> location:default/root -> location:default/root-1 -> location:default/root-2
         config -> location:default/root -> location:default/root-1a -> location:default/root-2
@@ -323,13 +466,10 @@ describe('DefaultProviderDatabase', () => {
               t.target_entity_ref === 'location:default/root-2',
           ),
         ).toBeFalsy();
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should add new locations using the delta options, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should add new locations using the delta options', async () => {
+        const { knex, db } = await createDatabase();
 
         // Existing state and references should stay
         await createLocations(knex, ['location:default/existing']);
@@ -393,13 +533,10 @@ describe('DefaultProviderDatabase', () => {
               t.target_entity_ref === 'location:default/existing',
           ),
         ).toBeTruthy();
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should not remove locations that are referenced elsewhere, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should not remove locations that are referenced elsewhere', async () => {
+        const { knex, db } = await createDatabase();
         /*
         config-1 -> location:default/root
         config-2 -> location:default/root
@@ -443,13 +580,10 @@ describe('DefaultProviderDatabase', () => {
             entity_ref: 'location:default/root',
           }),
         ]);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should remove old locations using the delta options, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should remove old locations using the delta options', async () => {
+        const { knex, db } = await createDatabase();
         await createLocations(knex, ['location:default/new-root']);
 
         await insertRefRow(knex, {
@@ -492,13 +626,10 @@ describe('DefaultProviderDatabase', () => {
               t.target_entity_ref === 'location:default/new-root',
           ),
         ).toBeFalsy();
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should update the location key during full replace, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should update the location key during full replace', async () => {
+        const { knex, db } = await createDatabase();
         await createLocations(knex, ['location:default/removed']);
         await insertRefreshStateRow(knex, {
           entity_id: uuid(),
@@ -558,13 +689,10 @@ describe('DefaultProviderDatabase', () => {
             target_entity_ref: 'location:default/replaced',
           }),
         ]);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should support replacing modified entities during a full update, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should support replacing modified entities during a full update', async () => {
+        const { knex, db } = await createDatabase();
 
         await db.transaction(async tx => {
           await db.replaceUnprocessedEntities(tx, {
@@ -689,14 +817,11 @@ describe('DefaultProviderDatabase', () => {
             target_entity_ref: 'component:default/a',
           },
         ]);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should successfully fall back from batch to individual mode on conflicts, %p',
-      async databaseId => {
+      it('should successfully fall back from batch to individual mode on conflicts', async () => {
         const fakeLogger = mockServices.logger.mock();
-        const { knex, db } = await createDatabase(databaseId, fakeLogger);
+        const { knex, db } = await createDatabase(fakeLogger);
 
         await createLocations(knex, ['component:default/a']);
 
@@ -738,14 +863,11 @@ describe('DefaultProviderDatabase', () => {
             }),
           ]),
         );
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should gracefully handle accidental duplicate refresh state references when deletion happens during a full sync, %p',
-      async databaseId => {
+      it('should gracefully handle accidental duplicate refresh state references when deletion happens during a full sync', async () => {
         const fakeLogger = mockServices.logger.mock();
-        const { knex, db } = await createDatabase(databaseId, fakeLogger);
+        const { knex, db } = await createDatabase(fakeLogger);
 
         await createLocations(knex, ['component:default/a']);
 
@@ -768,14 +890,11 @@ describe('DefaultProviderDatabase', () => {
 
         const state = await knex<DbRefreshStateRow>('refresh_state').select();
         expect(state).toEqual([]);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should properly translate deltas into add/update/remove, %p',
-      async databaseId => {
+      it('should properly translate deltas into add/update/remove', async () => {
         const fakeLogger = mockServices.logger.mock();
-        const { knex, db } = await createDatabase(databaseId, fakeLogger);
+        const { knex, db } = await createDatabase(fakeLogger);
 
         const entity1Before: Entity = {
           apiVersion: '1',
@@ -950,14 +1069,11 @@ describe('DefaultProviderDatabase', () => {
             location_key: 'new', // managed to update only the location key
           },
         ]);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'can handle large deltas without exploding, %p',
-      async databaseId => {
+      it('can handle large deltas without exploding', async () => {
         const fakeLogger = mockServices.logger.mock();
-        const { knex, db } = await createDatabase(databaseId, fakeLogger);
+        const { knex, db } = await createDatabase(fakeLogger);
 
         const count = 10000;
         const padded = (n: number) => String(n).padStart(8, '0');
@@ -989,15 +1105,70 @@ describe('DefaultProviderDatabase', () => {
           unprocessed_entity: JSON.stringify(entities[0].entity),
           unprocessed_hash: generateStableHash(entities[0].entity),
         });
-      },
-    );
-  });
+      });
+    });
 
-  describe('listReferenceSourceKeys', () => {
-    it.each(databases.eachSupportedId())(
-      'returns the source_keys from "refresh_state_references", %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+    describe('transaction', () => {
+      it('retries the entire transaction on a PostgreSQL deadlock', async () => {
+        const deadlockError = Object.assign(new Error('deadlock detected'), {
+          code: '40P01',
+        });
+        const mockKnexInstance = {
+          client: { config: { client: 'pg' } },
+          transaction: jest.fn(async (fn: (tx: any) => Promise<void>) => {
+            await fn({});
+          }),
+        } as unknown as Knex;
+        const db = new DefaultProviderDatabase({
+          database: mockKnexInstance,
+          logger: mockServices.logger.mock(),
+        });
+
+        let attempt = 0;
+        const inner = jest.fn(async () => {
+          attempt++;
+          if (attempt === 1) {
+            throw deadlockError;
+          }
+          return 'ok';
+        });
+
+        const result = await db.transaction(inner);
+        expect(result).toBe('ok');
+        expect(inner).toHaveBeenCalledTimes(2);
+        expect(
+          (mockKnexInstance.transaction as jest.Mock).mock.calls,
+        ).toHaveLength(2);
+      });
+
+      it('propagates the deadlock error after exhausting retries', async () => {
+        const deadlockError = Object.assign(new Error('deadlock detected'), {
+          code: '40P01',
+        });
+        const mockKnexInstance = {
+          client: { config: { client: 'pg' } },
+          transaction: jest.fn(async (fn: (tx: any) => Promise<void>) => {
+            await fn({});
+          }),
+        } as unknown as Knex;
+        const db = new DefaultProviderDatabase({
+          database: mockKnexInstance,
+          logger: mockServices.logger.mock(),
+        });
+
+        await expect(
+          db.transaction(jest.fn().mockRejectedValue(deadlockError)),
+        ).rejects.toThrow('deadlock detected');
+        // 1 initial attempt + 3 retries (default)
+        expect(
+          (mockKnexInstance.transaction as jest.Mock).mock.calls,
+        ).toHaveLength(4);
+      });
+    });
+
+    describe('listReferenceSourceKeys', () => {
+      it('returns the source_keys from "refresh_state_references"', async () => {
+        const { knex, db } = await createDatabase();
 
         await createLocations(knex, [
           'location:default/root',
@@ -1018,13 +1189,10 @@ describe('DefaultProviderDatabase', () => {
         );
 
         expect(res).toEqual(['bar', 'foo']);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'returns only unique source_keys", %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('returns only unique source_keys"', async () => {
+        const { knex, db } = await createDatabase();
 
         await createLocations(knex, [
           'location:default/root',
@@ -1045,13 +1213,10 @@ describe('DefaultProviderDatabase', () => {
         );
 
         expect(res).toEqual(['foo']);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'does not return null source_keys", %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('does not return null source_keys"', async () => {
+        const { knex, db } = await createDatabase();
 
         await createLocations(knex, [
           'location:default/root',
@@ -1071,7 +1236,7 @@ describe('DefaultProviderDatabase', () => {
         );
 
         expect(res).toEqual(['foo']);
-      },
-    );
-  });
-});
+      });
+    });
+  },
+);

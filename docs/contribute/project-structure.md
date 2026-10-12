@@ -37,7 +37,7 @@ the code.
 
 - [`docs/`](https://github.com/backstage/backstage/tree/master/docs) - This is
   where we keep all of our documentation Markdown files. These end up on
-  https://backstage.io/docs. Just keep in mind that changes to the
+  <https://backstage.io/docs>. Just keep in mind that changes to the
   [`sidebars.ts`](https://github.com/backstage/backstage/blob/master/microsite/sidebars.ts)
   file may be needed as sections are added/removed.
 
@@ -165,7 +165,7 @@ are separated out into their own folder, see further down.
 - [`techdocs-node/`](https://github.com/backstage/backstage/tree/master/plugins/techdocs-node) -
   Common node.js functionalities for TechDocs, to be shared between
   [techdocs-backend](https://github.com/backstage/backstage/tree/master/plugins/techdocs-backend)
-  plugin and [techdocs-cli](https://github.com/backstage/techdocs-cli).
+  plugin and [techdocs-cli](https://github.com/backstage/backstage/tree/master/packages/techdocs-cli).
 
 - [`test-utils/`](https://github.com/backstage/backstage/tree/master/packages/test-utils) -
   This package contains general purpose testing facilities for testing a

@@ -22,7 +22,7 @@
     flex-direction: column;
     font-family: var(--bui-font-regular);
     width: 100%;
-    flex-shrink: 0;
+    flex: 1;
 
     &[data-on-bg='neutral-1'] .bui-Input {
       background-color: var(--bui-bg-neutral-2);
@@ -92,6 +92,7 @@
     font-size: var(--bui-font-size-3);
     font-family: var(--bui-font-regular);
     font-weight: var(--bui-font-weight-regular);
+    line-height: 1.15;
     color: var(--bui-fg-primary);
     transition: box-shadow 0.2s ease-in-out;
     width: 100%;

@@ -22,6 +22,7 @@ import type {
   UseTableCompleteOptions,
 } from './types';
 import { useStableCallback } from './useStableCallback';
+import { useDebouncedValue } from './useDebouncedValue';
 import { getEffectivePageSize } from './getEffectivePageSize';
 
 /** @internal */
@@ -36,6 +37,8 @@ export function useCompletePagination<T extends TableItem, TFilter>(
     sortFn,
     filterFn,
     searchFn,
+    searchDebounceMs = 0,
+    filterDebounceMs = 0,
   } = options;
   const hasGetData = 'getData' in options;
   const noPagination = paginationOptions.type === 'none';
@@ -56,9 +59,13 @@ export function useCompletePagination<T extends TableItem, TFilter>(
   const [pageSize, setPageSize] = useState(defaultPageSize);
 
   // Sync pageSize when the caller changes paginationOptions.pageSize
+  const previousDefaultPageSize = useRef(defaultPageSize);
   useEffect(() => {
-    setPageSize(defaultPageSize);
-    setOffset(0);
+    if (previousDefaultPageSize.current !== defaultPageSize) {
+      previousDefaultPageSize.current = defaultPageSize;
+      setPageSize(defaultPageSize);
+      setOffset(0);
+    }
   }, [defaultPageSize]);
 
   // Load data on mount and when loadCount changes (reload trigger)
@@ -69,6 +76,7 @@ export function useCompletePagination<T extends TableItem, TFilter>(
     }
 
     if (!hasGetData) {
+      setIsPending(true);
       return;
     }
 
@@ -97,14 +105,25 @@ export function useCompletePagination<T extends TableItem, TFilter>(
     };
   }, [data, getData, hasGetData, loadCount]);
 
-  // Reset offset when query changes (query object is memoized)
-  const prevQueryRef = useRef(query);
+  // Debounced surrogates of search and filter feed the processing pipeline.
+  // At delayMs === 0 (the default) these are referentially equal to the live
+  // values, so behavior is identical to before this refactor.
+  const debouncedSearch = useDebouncedValue(search, searchDebounceMs);
+  const debouncedFilter = useDebouncedValue(filter, filterDebounceMs);
+
+  // Reset offset when the *debounced* query changes — keying on the live query
+  // would briefly flash page 1 of unfiltered data while the debounce settles.
+  const debouncedQuery = useMemo(
+    () => ({ sort, filter: debouncedFilter, search: debouncedSearch }),
+    [sort, debouncedFilter, debouncedSearch],
+  );
+  const prevDebouncedQueryRef = useRef(debouncedQuery);
   useEffect(() => {
-    if (prevQueryRef.current !== query) {
-      prevQueryRef.current = query;
+    if (prevDebouncedQueryRef.current !== debouncedQuery) {
+      prevDebouncedQueryRef.current = debouncedQuery;
       setOffset(0);
     }
-  }, [query]);
+  }, [debouncedQuery]);
 
   const resolvedItems = useMemo(() => data ?? items, [data, items]);
 
@@ -114,43 +133,81 @@ export function useCompletePagination<T extends TableItem, TFilter>(
       return undefined;
     }
     let result = [...resolvedItems];
-    if (filter !== undefined && filterFn) {
-      result = filterFn(result, filter);
+    if (debouncedFilter !== undefined && filterFn) {
+      result = filterFn(result, debouncedFilter);
     }
-    if (search && searchFn) {
-      result = searchFn(result, search);
+    if (debouncedSearch && searchFn) {
+      result = searchFn(result, debouncedSearch);
     }
     if (sort && sortFn) {
       result = sortFn(result, sort);
     }
     return result;
-  }, [resolvedItems, sort, filter, search, filterFn, searchFn, sortFn]);
+  }, [
+    resolvedItems,
+    sort,
+    debouncedFilter,
+    debouncedSearch,
+    filterFn,
+    searchFn,
+    sortFn,
+  ]);
 
-  const totalCount = processedData?.length ?? 0;
+  const previousProcessedDataRef = useRef(processedData);
+  if (processedData !== undefined) {
+    previousProcessedDataRef.current = processedData;
+  }
+  const retainedProcessedData =
+    processedData ?? previousProcessedDataRef.current;
+
+  const totalCount = retainedProcessedData?.length ?? 0;
+
+  const effectiveOffset = useMemo(() => {
+    if (noPagination) {
+      return 0;
+    }
+    if (retainedProcessedData === undefined) {
+      return offset;
+    }
+    if (totalCount === 0) {
+      return 0;
+    }
+    return Math.min(offset, Math.floor((totalCount - 1) / pageSize) * pageSize);
+  }, [noPagination, offset, pageSize, retainedProcessedData, totalCount]);
+
+  // Persist the corrected offset so later data growth does not restore it.
+  useEffect(() => {
+    if (offset !== effectiveOffset) {
+      setOffset(effectiveOffset);
+    }
+  }, [effectiveOffset, offset]);
 
   // Paginate the processed data
   const paginatedData = useMemo(
     () =>
       noPagination
-        ? processedData
-        : processedData?.slice(offset, offset + pageSize),
-    [processedData, offset, pageSize, noPagination],
+        ? retainedProcessedData
+        : retainedProcessedData?.slice(
+            effectiveOffset,
+            effectiveOffset + pageSize,
+          ),
+    [retainedProcessedData, effectiveOffset, pageSize, noPagination],
   );
 
-  const hasNextPage = !noPagination && offset + pageSize < totalCount;
-  const hasPreviousPage = !noPagination && offset > 0;
+  const hasNextPage = !noPagination && effectiveOffset + pageSize < totalCount;
+  const hasPreviousPage = !noPagination && effectiveOffset > 0;
 
   const onNextPage = useCallback(() => {
-    if (offset + pageSize < totalCount) {
-      setOffset(offset + pageSize);
+    if (effectiveOffset + pageSize < totalCount) {
+      setOffset(effectiveOffset + pageSize);
     }
-  }, [offset, pageSize, totalCount]);
+  }, [effectiveOffset, pageSize, totalCount]);
 
   const onPreviousPage = useCallback(() => {
-    if (offset > 0) {
-      setOffset(Math.max(0, offset - pageSize));
+    if (effectiveOffset > 0) {
+      setOffset(Math.max(0, effectiveOffset - pageSize));
     }
-  }, [offset, pageSize]);
+  }, [effectiveOffset, pageSize]);
 
   const onPageSizeChange = useCallback((newSize: number) => {
     setPageSize(newSize);
@@ -167,7 +224,7 @@ export function useCompletePagination<T extends TableItem, TFilter>(
     isPending: isPending,
     error,
     totalCount,
-    offset,
+    offset: effectiveOffset,
     pageSize,
     hasNextPage,
     hasPreviousPage,

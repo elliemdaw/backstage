@@ -394,10 +394,6 @@ export class CatalogBuilder {
       metrics,
     } = this.env;
 
-    const enableRelationsCompatibility = Boolean(
-      config.getOptionalBoolean('catalog.enableRelationsCompatibility'),
-    );
-
     const policy = this.buildEntityPolicy();
     const processors = this.buildProcessors();
     const parser = this.parser || defaultEntityDataParser;
@@ -435,8 +431,6 @@ export class CatalogBuilder {
     const unauthorizedEntitiesCatalog = new DefaultEntitiesCatalog({
       database: dbClient,
       logger,
-      stitcher,
-      enableRelationsCompatibility,
     });
 
     const orchestrator = new DefaultCatalogProcessingOrchestrator({
@@ -446,6 +440,7 @@ export class CatalogBuilder {
       logger,
       parser,
       policy,
+      allowedLocationTypes: this.allowedLocationType,
     });
 
     const entitiesCatalog = new AuthorizedEntitiesCatalog(
@@ -511,7 +506,6 @@ export class CatalogBuilder {
       knex: dbClient,
       processingDatabase,
       orchestrator,
-      stitcher,
       createHash: () => createHash('sha1'),
       pollingIntervalMs: 1000,
       onProcessingError: event => {
@@ -521,12 +515,11 @@ export class CatalogBuilder {
       metrics,
     });
 
-    const locationAnalyzer =
+    const locationAnalyzer = new AuthorizedLocationAnalyzer(
       this.locationAnalyzer ??
-      new AuthorizedLocationAnalyzer(
         new RepoLocationAnalyzer(logger, integrations, this.locationAnalyzers),
-        permissions,
-      );
+      permissions,
+    );
     const locationService = new AuthorizedLocationService(
       new DefaultLocationService(locationStore, orchestrator, {
         allowedLocationTypes: this.allowedLocationType,
@@ -554,7 +547,6 @@ export class CatalogBuilder {
       httpAuth,
       permissionsService: permissions,
       auditor,
-      enableRelationsCompatibility,
     });
 
     await connectEntityProviders(providerDatabase, enabledProviderEntries);

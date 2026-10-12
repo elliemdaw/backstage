@@ -31,7 +31,7 @@ Only one step is required to start using the `Search` plugin within declarative 
 yarn add @backstage/plugin-catalog @backstage/plugin-search
 ```
 
-The `Search` plugin depends on the `Catalog API`, that's the reason we have to install the ` @backstage/plugin-catalog` package too.
+The `Search` plugin depends on the `Catalog API`, that's the reason we have to install the `@backstage/plugin-catalog` package too.
 
 ### Extensions
 
@@ -52,16 +52,15 @@ _Example disabling the search page extension_
 app:
   extensions:
     - page:search: false # ✨
-    - nav-item:search: false # ✨
 ```
 
-_Example setting the search sidebar item title_
+_Example setting the search page title (used in the sidebar)_
 
 ```yaml
 # app-config.yaml
 app:
   extensions:
-    - nav-item:search: # ✨
+    - page:search: # ✨
         config:
           title: 'Search Page'
 ```

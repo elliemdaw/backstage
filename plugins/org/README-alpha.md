@@ -24,9 +24,9 @@ And below is an example of how a user page looks with the user profile and owner
 - [Routes](#routes)
 - [Extensions](#extensions)
   - [Entity Group Profile Card](#entity-group-profile-card)
-  - [Entity Group Profile Card](#entity-members-list-card)
-  - [Entity Group Profile Card](#entity-members-list-card)
-  - [Entity Group Profile Card](#entity-user-profile-card)
+  - [Entity Members List Card](#entity-members-list-card)
+  - [Entity Ownership Card](#entity-ownership-card)
+  - [Entity User Profile Card](#entity-user-profile-card)
   - [My Groups Sidebar Item](#my-groups-sidebar-item)
 
 ## Installation
@@ -143,7 +143,9 @@ For more information about where to place extension overrides, see the official 
 
 ### Entity Members List Card
 
-An [entity card](https://github.com/backstage/backstage/blob/master/plugins/catalog-react/report-alpha.api.md) extension that displays the names and emails of group members. By clicking the member's name, you'll be directed to the user's catalog page, and the email opens your default email program.
+An [entity card](https://github.com/backstage/backstage/blob/master/plugins/catalog-react/report-alpha.api.md) extension that displays group members with avatars, names, and emails. Clicking a member's name opens the user's catalog page; clicking an email opens your default mail client.
+
+By default, each member avatar uses `member.spec.profile.picture` from the catalog. When that field is empty, the card shows initials. To customize avatar rendering, override the shared `UserAvatar` swappable component (see [README.md](./README.md#useravatar-and-custom-member-avatars)).
 
 | Kind          | Namespace | Name           | Id                             |
 | ------------- | --------- | -------------- | ------------------------------ |
@@ -151,46 +153,55 @@ An [entity card](https://github.com/backstage/backstage/blob/master/plugins/cata
 
 #### Config
 
-Currently, this entity card extension has only one configuration:
+The following keys can be set under `app.extensions` for `entity-card:org/members-list`:
 
-| Config key | Default value       | Description                                                                                                                                 |
-| ---------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filter`   | `{ kind: 'group' }` | An [entity filter](https://github.com/backstage/backstage/pull/21480) that determines when the card should be displayed on the entity page. |
+| Config key                   | Default value | Description                                                                                                      |
+| ---------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `showAggregateMembersToggle` | `false`       | When `true`, shows a toggle to switch between direct members and aggregated (descendant) group members.          |
+| `initialRelationAggregation` | `direct`      | Initial member list mode: `direct` (immediate members only) or `aggregated` (includes descendant group members). |
 
-This is how to configure the `members-list` extension in the `app-config.yaml` file:
+Example:
 
 ```yaml
 app:
   extensions:
     - entity-card:org/members-list:
         config:
-          <Config-Key>: '<Config-Value>'
+          showAggregateMembersToggle: true
+          initialRelationAggregation: aggregated
 ```
+
+> [!NOTE]
+> User avatar rendering is **not** configurable through `app-config.yaml`. See [README.md](./README.md#useravatar-and-custom-member-avatars).
 
 #### Override
 
-Use extension overrides for completely re-implementing the members-list entity card extension:
+Use extension overrides to customize the members-list card — for example to change pagination defaults or replace the card entirely:
 
 ```tsx
-import { createFrontendModule } from '@backstage/backstage-plugin-api';
+import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { EntityCardBlueprint } from '@backstage/plugin-catalog-react/alpha';
+import { MembersListCard } from '@backstage/plugin-org';
 
 export default createFrontendModule({
   pluginId: 'org',
   extensions: [
     EntityCardBlueprint.make({
-      // Name is necessary so the system knows that this extension will override the default 'members-list' entity card extension provided by the 'org' plugin
       name: 'members-list',
       params: {
-        // By default, this card will show up only for groups
         filter: { kind: 'group' },
-        // Returning a custom card component
-        loader: () =>
-          import('./components').then(m => <m.MyCustomMembersListEntityCard />),
+        loader: async () => <MembersListCard showAggregateMembersToggle />,
       },
     }),
   ],
 });
+```
+
+To fully replace the card UI, return your own component from `loader` instead:
+
+```tsx
+loader: () =>
+  import('./components').then(m => <m.MyCustomMembersListEntityCard />),
 ```
 
 For more information about where to place extension overrides, see the official [documentation](https://backstage.io/docs/frontend-system/architecture/extension-overrides).
@@ -305,67 +316,37 @@ For more information about where to place extension overrides, see the official 
 
 ### My Groups Sidebar Item
 
-As the [NavItem](https://backstage.io/docs/reference/frontend-plugin-api.createnavitemextension) extension type does not support conditional rendering, this plugin does not provide navigation items, so to use the `MyGroupsSidebarItem` component, we recommend overriding the [App/Nav](https://backstage.io/docs/frontend-system/building-apps/built-in-extensions#app-nav) extension and adding the item statically.
-
-> [!IMPORTANT]
-> As you can see in the example below, we are using the same attachment point, inputs and outputs as the default App/Nav extension to avoid side effects on the NavItem and NavLogo extensions.
+This plugin does not provide a page extension for the groups sidebar item, since it requires conditional rendering based on the logged-in user. To use the `MyGroupsSidebarItem` component, add it to your custom sidebar implementation using the `NavContentBlueprint` in `packages/app/src/modules/nav/Sidebar.tsx`:
 
 ```tsx
-// ...
 import { MyGroupsSidebarItem } from '@backstage/plugin-org';
 import GroupIcon from '@material-ui/icons/People';
+import { NavContentBlueprint } from '@backstage/plugin-app-react';
 
-export default createFrontendModule({
-  pluginId: 'app',
-  extensions: [
-    createExtension({
-      // Name is necessary so the system knows that this extension will override the default app nav extension
-      name: 'nav',
-      // Keeping the same attachment point as in the default App/Nav extension
-      attachTo: { id: 'app/layout', input: 'nav' },
-      // Keeping the same inputs as in the default App/Nav extension
-      inputs: {
-        items: createExtensionInput({
-          target: createNavItemExtension.targetDataRef,
-        }),
-        logos: createExtensionInput(
-          {
-            elements: createNavLogoExtension.logoElementsDataRef,
-          },
-          {
-            singleton: true,
-            optional: true,
-          },
-        ),
-      },
-      // Keeping the same output as in the default App/Nav extension
-      output: {
-        element: coreExtensionData.reactElement,
-      },
-      factory({ inputs }) {
-        return {
-          element: (
-            <Sidebar>
-              {/* Code borrowed from the default extension implementation to render the logos and items inputs */}
-              <SidebarLogo {...inputs.logos?.output.elements} />
-              <SidebarDivider />
-              {inputs.items.map((item, index) => (
-                <SidebarNavItem {...item.output.target} key={index} />
-              ))}
-              {/* Here is where we actually modifies the default implementation by adding a static item to render a group of squad pages */}
-              <SidebarGroup label="Menu" icon={<MenuIcon />}>
-                {/* The MyGroupsSidebarItem provides quick access to the group(s) the logged in user is a member of directly in the sidebar. */}
-                <MyGroupsSidebarItem
-                  singularTitle="My Squad"
-                  pluralTitle="My Squads"
-                  icon={GroupIcon}
-                />
-              </SidebarGroup>
-            </Sidebar>
-          ),
-        };
-      },
-    }),
-  ],
+export const SidebarContent = NavContentBlueprint.make({
+  params: {
+    component: ({ navItems }) => {
+      const nav = navItems.withComponent(item => (
+        <SidebarItem icon={() => item.icon} to={item.href} text={item.title} />
+      ));
+
+      return (
+        <Sidebar>
+          <SidebarLogo />
+          <SidebarDivider />
+          <SidebarGroup label="Menu" icon={<MenuIcon />}>
+            {nav.rest()}
+            <MyGroupsSidebarItem
+              singularTitle="My Squad"
+              pluralTitle="My Squads"
+              icon={GroupIcon}
+            />
+          </SidebarGroup>
+        </Sidebar>
+      );
+    },
+  },
 });
 ```
+
+For more details on customizing the sidebar, see the [app migration guide](https://backstage.io/docs/frontend-system/building-apps/migrating#app-root-sidebar).

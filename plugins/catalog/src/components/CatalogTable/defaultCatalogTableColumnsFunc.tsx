@@ -25,11 +25,16 @@ export const defaultCatalogTableColumnsFunc: CatalogTableColumnsFunc = ({
   filters,
   entities,
 }) => {
+  // Derive the effective kind from the displayed entities so that both
+  // the column layout and the name column's defaultKind stay consistent
+  // with the rows during filter transitions (when stale rows are kept
+  // visible while new data loads).
+  const effectiveKind = entities[0]?.kind?.toLowerCase() ?? filters.kind?.value;
   const showTypeColumn = filters.type === undefined;
 
   return [
     columnFactories.createTitleColumn({ hidden: true }),
-    columnFactories.createNameColumn({ defaultKind: filters.kind?.value }),
+    columnFactories.createNameColumn({ defaultKind: effectiveKind }),
     ...createEntitySpecificColumns(),
   ];
 
@@ -44,7 +49,7 @@ export const defaultCatalogTableColumnsFunc: CatalogTableColumnsFunc = ({
       columnFactories.createSpecTypeColumn({ hidden: !showTypeColumn }),
       columnFactories.createSpecLifecycleColumn(),
     ];
-    switch (filters.kind?.value) {
+    switch (effectiveKind) {
       case 'user':
         return [...descriptionTagColumns];
       case 'domain':

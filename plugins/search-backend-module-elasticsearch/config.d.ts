@@ -36,7 +36,7 @@ export interface Config {
       batchKeyField?: string;
       /**
        * Options for configuring highlight settings
-       * See https://www.elastic.co/guide/en/elasticsearch/reference/7.17/highlighting.html
+       * See https://www.elastic.co/guide/en/elasticsearch/reference/8.19/highlighting.html
        */
       highlightOptions?: {
         /**
@@ -68,7 +68,7 @@ export interface Config {
 
         fuzziness?: 'AUTO' | number;
         /**
-         * Minimum number of characters that must match exactly at the beginning of the qeury. Defaults to 0.
+         * Minimum number of characters that must match exactly at the beginning of the query. Defaults to 0.
          */
         prefixLength?: number;
       };
@@ -91,7 +91,7 @@ export interface Config {
 
           /**
            * See available properties of template
-           * https://www.elastic.co/guide/en/elasticsearch/reference/7.15/indices-put-template.html#put-index-template-api-request-body
+           * https://www.elastic.co/guide/en/elasticsearch/reference/8.19/indices-put-template.html#put-index-template-api-request-body
            */
           template?: {
             [key: string]: unknown;

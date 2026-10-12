@@ -142,16 +142,6 @@ export interface Config {
     }>;
 
     /**
-     * Enables the compatibility layer for relations in returned entities that
-     * ensures that all relations objects have both `target` and `targetRef`.
-     *
-     * Enabling this option significantly increases the memory usage of the
-     * catalog, and slightly reduces performance, but may avoid breaking consumers that
-     * rely on the existence of `target` in the relations objects.
-     */
-    enableRelationsCompatibility?: boolean;
-
-    /**
      * Disables the default backstage processors.
      *
      * Enabling this option allows more complete control of which processors are included
@@ -175,21 +165,14 @@ export interface Config {
     orphanProviderStrategy?: 'keep' | 'delete';
 
     /**
-     * The strategy to use when stitching together the final entities. The default mode is "deferred".
+     * The strategy to use when stitching together the final entities.
      */
-    stitchingStrategy?:
-      | {
-          /** Perform stitching in-band immediately when needed */
-          mode: 'immediate';
-        }
-      | {
-          /** Defer stitching to be performed asynchronously */
-          mode: 'deferred';
-          /** Polling interval for tasks in seconds */
-          pollingInterval?: HumanDuration | string;
-          /** How long to wait for a stitch to complete before giving up in seconds */
-          stitchTimeout?: HumanDuration | string;
-        };
+    stitchingStrategy?: {
+      /** Polling interval for tasks in seconds */
+      pollingInterval?: HumanDuration | string;
+      /** How long to wait for a stitch to complete before giving up in seconds */
+      stitchTimeout?: HumanDuration | string;
+    };
 
     /**
      * The strategy to use when there is a conflict with a location being registered.

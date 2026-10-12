@@ -16,15 +16,7 @@
 
 import { Knex } from 'knex';
 import { DbSearchRow } from '../../tables';
-import { BATCH_SIZE } from './util';
-
-// The Postgres sync uses COALESCE(x, NULL_SENTINEL) to allow Postgres to
-// include nullable columns in the Hash Cond of anti-joins (IS NOT DISTINCT
-// FROM prevents this). As a consequence, values that are exactly this
-// sentinel character are not searchable — they would be treated as NULL.
-// This is the SOH (Start of Heading) control character which does not
-// appear in real entity metadata.
-const NULL_SENTINEL = '\x01';
+import { BATCH_SIZE, NULL_SENTINEL } from './util';
 
 function filterSentinelValues(entries: DbSearchRow[]): DbSearchRow[] {
   return entries.filter(
@@ -38,24 +30,43 @@ function filterSentinelValues(entries: DbSearchRow[]): DbSearchRow[] {
  * values are left untouched, new rows are inserted, and stale rows are
  * deleted — minimizing write churn, dead tuples, and WAL traffic.
  *
+ * Runs within the caller's publication transaction. The caller owns commit,
+ * rollback, and whole-transaction retries; errors propagate unchanged.
+ *
  * Uses database-specific strategies:
  * - Postgres: Single writable CTE with unnest (one round-trip, no DDL)
- * - MySQL: Temporary table merge (two queries in a transaction)
+ * - MySQL: Session-scoped temporary table and delete/insert merge
  * - SQLite: Simple bulk replace (sufficient for dev/test)
  */
 export async function syncSearchRows(
-  knex: Knex | Knex.Transaction,
+  knex: Knex.Transaction,
   entityId: string,
   searchEntries: DbSearchRow[],
 ): Promise<void> {
+  // Dedup by (key, value) — the UNIQUE constraint on (entity_id, key, value)
+  // rejects duplicates, and the same lowercased value with different original
+  // casing is semantically a single entry. Keep the first occurrence, which
+  // matches the first-wins semantics of buildEntitySearch so that both layers
+  // consistently pick the same original_value for a given input order.
+  const dedupMap = new Map<string, DbSearchRow>();
+  for (const entry of searchEntries) {
+    const k = `${entry.key}\0${
+      entry.value === null ? NULL_SENTINEL : entry.value
+    }`;
+    if (!dedupMap.has(k)) {
+      dedupMap.set(k, entry);
+    }
+  }
+  const deduped = [...dedupMap.values()];
+
   const client = knex.client.config.client;
 
   if (client === 'pg') {
-    await syncPostgres(knex, entityId, searchEntries);
+    await syncPostgres(knex, entityId, deduped);
   } else if (client.includes('mysql')) {
-    await syncMysql(knex, entityId, searchEntries);
+    await syncMysql(knex, entityId, deduped);
   } else {
-    await syncBulkReplace(knex, entityId, searchEntries);
+    await syncBulkReplace(knex, entityId, deduped);
   }
 }
 
@@ -74,7 +85,7 @@ export async function syncSearchRows(
 // real entity values since they are human-readable strings.
 // ---------------------------------------------------------------------------
 async function syncPostgres(
-  knex: Knex | Knex.Transaction,
+  knex: Knex.Transaction,
   entityId: string,
   searchEntries: DbSearchRow[],
 ): Promise<void> {
@@ -110,13 +121,24 @@ async function syncPostgres(
         AND COALESCE(s.value, chr(1)) = COALESCE(d.value, chr(1))
         AND COALESCE(s.original_value, chr(1)) = COALESCE(d.original_value, chr(1))
     )
+    ON CONFLICT (entity_id, key, value)
+    DO UPDATE SET original_value = EXCLUDED.original_value
     `,
-    [keys, values, originalValues, entityId, entityId, entityId],
+    [
+      keys,
+      // Knex's types don't include nullable PostgreSQL array parameters,
+      // even though they are supported by the pg driver.
+      values as Knex.RawBinding,
+      originalValues as Knex.RawBinding,
+      entityId,
+      entityId,
+      entityId,
+    ],
   );
 }
 
 // ---------------------------------------------------------------------------
-// MySQL: temporary table merge with deadlock retry
+// MySQL: temporary table merge
 //
 // MySQL does not support data-modifying CTEs, so we materialize the desired
 // state into a session-scoped temporary table and then merge it into the
@@ -127,102 +149,84 @@ async function syncPostgres(
 //
 // InnoDB's next-key (gap) locking can cause deadlocks between concurrent
 // transactions operating on different entity_ids when their gap locks
-// overlap on shared index pages. We retry on deadlock (error 1213) since
-// the operation is idempotent.
+// overlap on shared index pages. Deadlocks propagate to the caller, which must
+// retry the entire publication transaction rather than only these search writes.
 // ---------------------------------------------------------------------------
-const MYSQL_DEADLOCK_MAX_RETRIES = 3;
-
 async function syncMysql(
-  knex: Knex | Knex.Transaction,
+  knex: Knex.Transaction,
   entityId: string,
   searchEntries: DbSearchRow[],
 ): Promise<void> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await knex.transaction(async trx => {
-        // Create the temp table inside the transaction so it's guaranteed
-        // to be on the same pooled connection as the merge queries.
-        // CREATE TEMPORARY TABLE does not cause an implicit commit in
-        // MySQL (unlike regular CREATE TABLE), so this is safe.
-        await trx.raw(
-          'CREATE TEMPORARY TABLE IF NOT EXISTS `_desired_search` (' +
-            '`key` VARCHAR(255) NOT NULL, ' +
-            '`value` VARCHAR(255) NULL, ' +
-            '`original_value` VARCHAR(255) NULL' +
-            ')',
-        );
-        // Clear stale data from any previous call on this connection.
-        // Uses DELETE (DML) instead of TRUNCATE (DDL) to avoid an
-        // implicit commit that would break transaction atomicity.
-        await trx.raw('DELETE FROM `_desired_search`');
+  // Create the temp table inside the transaction so it's guaranteed
+  // to be on the same pooled connection as the merge queries.
+  // CREATE TEMPORARY TABLE does not cause an implicit commit in
+  // MySQL (unlike regular CREATE TABLE), so this is safe.
+  await knex.raw(
+    'CREATE TEMPORARY TABLE IF NOT EXISTS `_desired_search` (' +
+      '`key` VARCHAR(255) NOT NULL, ' +
+      '`value` VARCHAR(255) NULL, ' +
+      '`original_value` VARCHAR(255) NULL' +
+      ')',
+  );
+  // Clear stale data from any previous call on this connection.
+  // Uses DELETE (DML) instead of TRUNCATE (DDL) to avoid an
+  // implicit commit that would break transaction atomicity.
+  await knex.raw('DELETE FROM `_desired_search`');
 
-        if (searchEntries.length > 0) {
-          await trx.batchInsert(
-            '_desired_search',
-            searchEntries.map(r => ({
-              key: r.key,
-              value: r.value,
-              original_value: r.original_value,
-            })),
-            BATCH_SIZE,
-          );
-        }
-
-        // Delete rows that are no longer in the desired set
-        await trx.raw(
-          'DELETE s FROM `search` s ' +
-            'WHERE s.entity_id = ? ' +
-            'AND NOT EXISTS (' +
-            '  SELECT 1 FROM `_desired_search` d' +
-            '  WHERE d.`key` = s.`key`' +
-            '    AND d.`value` <=> s.`value`' +
-            '    AND BINARY d.`original_value` <=> BINARY s.`original_value`' +
-            ')',
-          [entityId],
-        );
-
-        // Insert rows that are new in the desired set. The original_value
-        // column preserves the original casing and must be compared with
-        // BINARY to avoid MySQL's default case-insensitive collation
-        // treating e.g. "Team-A" and "team-a" as equal.
-        await trx.raw(
-          'INSERT INTO `search` (entity_id, `key`, `value`, `original_value`) ' +
-            'SELECT ?, d.`key`, d.`value`, d.`original_value` ' +
-            'FROM `_desired_search` d ' +
-            'WHERE NOT EXISTS (' +
-            '  SELECT 1 FROM `search` s' +
-            '  WHERE s.entity_id = ?' +
-            '    AND s.`key` = d.`key`' +
-            '    AND s.`value` <=> d.`value`' +
-            '    AND BINARY s.`original_value` <=> BINARY d.`original_value`' +
-            ')',
-          [entityId, entityId],
-        );
-      });
-      return;
-    } catch (error) {
-      // MySQL error 1213: ER_LOCK_DEADLOCK
-      if (
-        (error as any)?.errno === 1213 &&
-        attempt < MYSQL_DEADLOCK_MAX_RETRIES
-      ) {
-        continue;
-      }
-      throw error;
-    }
+  if (searchEntries.length > 0) {
+    await knex
+      .batchInsert(
+        '_desired_search',
+        searchEntries.map(r => ({
+          key: r.key,
+          value: r.value,
+          original_value: r.original_value,
+        })),
+        BATCH_SIZE,
+      )
+      .transacting(knex);
   }
+
+  // Delete rows that are no longer in the desired set
+  await knex.raw(
+    'DELETE s FROM `search` s ' +
+      'WHERE s.entity_id = ? ' +
+      'AND NOT EXISTS (' +
+      '  SELECT 1 FROM `_desired_search` d' +
+      '  WHERE d.`key` = s.`key`' +
+      '    AND d.`value` <=> s.`value`' +
+      '    AND BINARY d.`original_value` <=> BINARY s.`original_value`' +
+      ')',
+    [entityId],
+  );
+
+  // Insert rows that are new in the desired set. The original_value
+  // column preserves the original casing and must be compared with
+  // BINARY to avoid MySQL's default case-insensitive collation
+  // treating e.g. "Team-A" and "team-a" as equal.
+  await knex.raw(
+    'INSERT INTO `search` (entity_id, `key`, `value`, `original_value`) ' +
+      'SELECT ?, d.`key`, d.`value`, d.`original_value` ' +
+      'FROM `_desired_search` d ' +
+      'WHERE NOT EXISTS (' +
+      '  SELECT 1 FROM `search` s' +
+      '  WHERE s.entity_id = ?' +
+      '    AND s.`key` = d.`key`' +
+      '    AND s.`value` <=> d.`value`' +
+      '    AND BINARY s.`original_value` <=> BINARY d.`original_value`' +
+      ')',
+    [entityId, entityId],
+  );
 }
 
 // ---------------------------------------------------------------------------
 // SQLite (and fallback): bulk replace
 // ---------------------------------------------------------------------------
 async function syncBulkReplace(
-  knex: Knex | Knex.Transaction,
+  knex: Knex.Transaction,
   entityId: string,
   searchEntries: DbSearchRow[],
 ): Promise<void> {
-  await knex.transaction(async trx => {
-    await trx<DbSearchRow>('search').where({ entity_id: entityId }).delete();
-    await trx.batchInsert('search', searchEntries, BATCH_SIZE);
-  });
+  await knex<DbSearchRow>('search').where({ entity_id: entityId }).delete();
+  await knex.batchInsert('search', searchEntries, BATCH_SIZE).transacting(knex);
 }

@@ -20,8 +20,7 @@ interactions.
   pairs) that may be provided on an event-by-event basis. To continue the above
   example, the URL a user clicked to might look like `{ "to": "/a/page" }`.
 - **Context** represents the broader context in which an event took place. By
-  default, information like `pluginId`, `extension`, and `routeRef` are
-  provided.
+  default, it includes `pluginId` and `extensionId`.
 
 This composition of events aims to allow analysis at different levels of detail,
 enabling very granular questions (like "what is the most clicked on thing on a
@@ -177,6 +176,16 @@ const analytics = useAnalytics();
 analytics.captureEvent('deploy', serviceName);
 ```
 
+The events you capture should reflect user intent and domain actions your
+plugin is uniquely responsible for, rather than generic clicks or UI
+lifecycle events. Many `@backstage/ui` components (such as `Link`,
+`ButtonLink`, `Tab`, `MenuItem`, `Tag`, and `Table` rows) often capture
+`click` events automatically, so you rarely need to instrument
+navigation-style clicks by hand. If one of those components is the right UI
+primitive but the default event is not what you want to capture, pass the
+`noTrack` prop to suppress it and call `captureEvent` from your own click
+handler instead.
+
 ### Providing Extra Attributes
 
 Additional dimensional `attributes` as well as a numeric `value` can be provided
@@ -246,9 +255,9 @@ event resembling:
 ```
 
 Note that, for brevity in the example above, the context keys provided by
-Backstage core (`pluginId`, `extension`, and `routeRef`) have been omitted. In
-reality, those details would be included alongside any additional context
-provided by you.
+Backstage core (`pluginId` and `extensionId`) have been omitted. In reality,
+those details would be included alongside any additional context provided by
+you.
 
 Analytics contexts can be nested; their values are merged down the react tree,
 allowing keys to be overwritten.
@@ -262,7 +271,7 @@ it's important to keep each of these levels of detail disaggregated.
 - Avoid providing an overly specific `action`. For example, instead of
   `filterEntityTable`, consider just using `filter` as the action, and allowing
   `EntityTable` to be specified as part of the event's `context` (most likely
-  automatically as part of the `extension` in which the `filter` event was
+  automatically as part of the `extensionId` in which the `filter` event was
   captured).
 
 - On the flip side, when adding `attributes` to or `context` around an event,

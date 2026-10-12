@@ -17,6 +17,19 @@
 import { createServiceRef } from '@backstage/backend-plugin-api';
 
 /**
+ * Service for looking up plugin-scoped connections to external systems.
+ * Declare consumed connection types with `declareConnection` before requesting this service.
+ *
+ * @alpha
+ */
+export const connectionsServiceRef = createServiceRef<
+  import('@backstage/connections').ConnectionsService
+>({
+  id: 'alpha.core.connections',
+  scope: 'plugin',
+});
+
+/**
  * Service for calling distributed actions
  *
  * See {@link ActionsService}
@@ -47,17 +60,6 @@ export const actionsRegistryServiceRef = createServiceRef<
 });
 
 /**
- * Read information about your current Backstage deployment.
- * @alpha
- */
-export const rootSystemMetadataServiceRef = createServiceRef<
-  import('./RootSystemMetadataService').RootSystemMetadataService
->({
-  id: 'alpha.core.rootSystemMetadata',
-  scope: 'root',
-});
-
-/**
  * Service for managing metrics.
  *
  * @alpha
@@ -66,4 +68,17 @@ export const metricsServiceRef = createServiceRef<
   import('./MetricsService').MetricsService
 >({
   id: 'alpha.core.metrics',
+});
+
+/**
+ * Service for managing trace spans.
+ *
+ * See `TracingService` for the API surface.
+ *
+ * @alpha
+ */
+export const tracingServiceRef = createServiceRef<
+  import('./TracingService').TracingService
+>({
+  id: 'alpha.core.tracing',
 });

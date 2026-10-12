@@ -14,11 +14,7 @@
  * limitations under the License.
  */
 
-import {
-  mockServices,
-  TestDatabaseId,
-  TestDatabases,
-} from '@backstage/backend-test-utils';
+import { mockServices, TestDatabases } from '@backstage/backend-test-utils';
 import { Entity, stringifyEntityRef } from '@backstage/catalog-model';
 import { Knex } from 'knex';
 import { randomUUID as uuid } from 'node:crypto';
@@ -26,78 +22,80 @@ import { Logger } from 'winston';
 import { DateTime } from 'luxon';
 import { applyDatabaseMigrations } from './migrations';
 import { DefaultProcessingDatabase } from './DefaultProcessingDatabase';
+import { markForStitching } from './operations/stitcher/markForStitching';
+import { DefaultProviderDatabase } from './DefaultProviderDatabase';
 import {
   DbRefreshKeysRow,
   DbRefreshStateReferencesRow,
   DbRefreshStateRow,
   DbRelationsRow,
+  DbStitchQueueRow,
 } from './tables';
 import { createRandomProcessingInterval } from '../processing/refresh';
 import { timestampToDateTime } from './conversion';
-import { generateStableHash } from './util';
+import { generateStableHash, retryOnDeadlock } from './util';
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { metricsServiceMock } from '@backstage/backend-test-utils/alpha';
+import { getDeferredStitchableEntities } from './operations/stitcher/getDeferredStitchableEntities';
 
 jest.setTimeout(60_000);
 
-describe('DefaultProcessingDatabase', () => {
-  const defaultLogger = mockServices.logger.mock();
-  const databases = TestDatabases.create();
+const databases = TestDatabases.create();
 
-  async function createDatabase(
-    databaseId: TestDatabaseId,
-    logger: LoggerService = defaultLogger,
-  ) {
-    const knex = await databases.init(databaseId);
-    await applyDatabaseMigrations(knex);
-    return {
-      knex,
-      db: new DefaultProcessingDatabase({
-        database: knex,
-        logger,
-        refreshInterval: createRandomProcessingInterval({
-          minSeconds: 100,
-          maxSeconds: 150,
+describe.each(databases.eachSupportedId())(
+  'DefaultProcessingDatabase, %p',
+  databaseId => {
+    const defaultLogger = mockServices.logger.mock();
+
+    async function createDatabase(logger: LoggerService = defaultLogger) {
+      const knex = await databases.init(databaseId);
+      await applyDatabaseMigrations(knex);
+      return {
+        knex,
+        db: new DefaultProcessingDatabase({
+          database: knex,
+          logger,
+          refreshInterval: createRandomProcessingInterval({
+            minSeconds: 100,
+            maxSeconds: 150,
+          }),
+          events: mockServices.events.mock(),
+          metrics: metricsServiceMock.mock(),
         }),
-        events: mockServices.events.mock(),
-        metrics: metricsServiceMock.mock(),
-      }),
-    };
-  }
-
-  const insertRefRow = async (db: Knex, ref: DbRefreshStateReferencesRow) => {
-    return db<DbRefreshStateReferencesRow>('refresh_state_references').insert(
-      ref,
-    );
-  };
-
-  const insertRefreshStateRow = async (db: Knex, ref: DbRefreshStateRow) => {
-    await db<DbRefreshStateRow>('refresh_state').insert(ref);
-  };
-
-  describe('updateProcessedEntity', () => {
-    let id: string;
-    let processedEntity: Entity;
-
-    beforeEach(() => {
-      id = uuid();
-      processedEntity = {
-        apiVersion: '1',
-        kind: 'Location',
-        metadata: {
-          name: 'fakelocation',
-        },
-        spec: {
-          type: 'url',
-          target: 'somethingelse',
-        },
       };
-    });
+    }
 
-    it.each(databases.eachSupportedId())(
-      'fails when an entity is processed with a different locationKey, %p',
-      async databaseId => {
-        const { db } = await createDatabase(databaseId);
+    const insertRefRow = async (db: Knex, ref: DbRefreshStateReferencesRow) => {
+      return db<DbRefreshStateReferencesRow>('refresh_state_references').insert(
+        ref,
+      );
+    };
+
+    const insertRefreshStateRow = async (db: Knex, ref: DbRefreshStateRow) => {
+      await db<DbRefreshStateRow>('refresh_state').insert(ref);
+    };
+
+    describe('updateProcessedEntity', () => {
+      let id: string;
+      let processedEntity: Entity;
+
+      beforeEach(() => {
+        id = uuid();
+        processedEntity = {
+          apiVersion: '1',
+          kind: 'Location',
+          metadata: {
+            name: 'fakelocation',
+          },
+          spec: {
+            type: 'url',
+            target: 'somethingelse',
+          },
+        };
+      });
+
+      it('fails when an entity is processed with a different locationKey', async () => {
+        const { db } = await createDatabase();
         await db.transaction(async tx => {
           await expect(() =>
             db.updateProcessedEntity(tx, {
@@ -112,12 +110,9 @@ describe('DefaultProcessingDatabase', () => {
             `Conflicting write of processing result for ${id} with location key 'undefined'`,
           );
         });
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'fails when the locationKey is different, %p',
-      async databaseId => {
+      it('fails when the locationKey is different', async () => {
         const options = {
           id,
           processedEntity,
@@ -128,7 +123,7 @@ describe('DefaultProcessingDatabase', () => {
           refreshKeys: [],
           errors: "['something broke']",
         };
-        const { knex, db } = await createDatabase(databaseId);
+        const { knex, db } = await createDatabase();
         await insertRefreshStateRow(knex, {
           entity_id: id,
           entity_ref: 'location:default/fakelocation',
@@ -158,13 +153,10 @@ describe('DefaultProcessingDatabase', () => {
             `Conflicting write of processing result for ${id} with location key 'fail'`,
           ),
         );
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'updates the refresh state entry with the cache, processed entity and errors, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('updates the refresh state entry with the cache, processed entity and errors', async () => {
+        const { knex, db } = await createDatabase();
         await insertRefreshStateRow(knex, {
           entity_id: id,
           entity_ref: 'location:default/fakelocation',
@@ -197,13 +189,446 @@ describe('DefaultProcessingDatabase', () => {
         );
         expect(entities[0].errors).toEqual("['something broke']");
         expect(entities[0].location_key).toEqual('key');
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'removes old relations and stores the new relationships, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('commits processing and stitch scheduling together', async () => {
+        const { knex, db } = await createDatabase();
+        await insertRefreshStateRow(knex, {
+          entity_id: id,
+          entity_ref: 'location:default/fakelocation',
+          unprocessed_entity: '{}',
+          processed_entity: '{}',
+          errors: '[]',
+          next_update_at: '2021-04-01 13:37:00',
+          last_discovery_at: '2021-04-01 13:37:00',
+        });
+
+        await db.transaction(async tx => {
+          await db.updateProcessedEntity(tx, {
+            id,
+            processedEntity,
+            resultHash: 'new-result-hash',
+            relations: [],
+            deferredEntities: [],
+            refreshKeys: [],
+          });
+          await markForStitching({
+            knex: tx as Knex.Transaction,
+            entityRefs: ['location:default/fakelocation'],
+          });
+        });
+
+        await expect(
+          knex<DbRefreshStateRow>('refresh_state')
+            .where({ entity_id: id })
+            .first(),
+        ).resolves.toEqual(
+          expect.objectContaining({
+            processed_entity: JSON.stringify(processedEntity),
+            result_hash: 'new-result-hash',
+          }),
+        );
+        await expect(
+          knex<DbStitchQueueRow>('stitch_queue').select('entity_ref'),
+        ).resolves.toEqual([{ entity_ref: 'location:default/fakelocation' }]);
+      });
+
+      it('rolls back processing and stitch scheduling together', async () => {
+        const { knex, db } = await createDatabase();
+        await insertRefreshStateRow(knex, {
+          entity_id: id,
+          entity_ref: 'location:default/fakelocation',
+          unprocessed_entity: '{}',
+          processed_entity: '{}',
+          errors: '[]',
+          next_update_at: '2021-04-01 13:37:00',
+          last_discovery_at: '2021-04-01 13:37:00',
+        });
+
+        await expect(
+          db.transaction(async tx => {
+            await db.updateProcessedEntity(tx, {
+              id,
+              processedEntity,
+              resultHash: 'new-result-hash',
+              relations: [],
+              deferredEntities: [],
+              refreshKeys: [],
+            });
+            await markForStitching({
+              knex: tx as Knex.Transaction,
+              entityRefs: ['location:default/fakelocation'],
+            });
+            throw new Error('rollback');
+          }),
+        ).rejects.toThrow('rollback');
+
+        await expect(
+          knex<DbRefreshStateRow>('refresh_state')
+            .where({ entity_id: id })
+            .first(),
+        ).resolves.toEqual(
+          expect.objectContaining({
+            processed_entity: '{}',
+            result_hash: null,
+          }),
+        );
+        await expect(knex<DbStitchQueueRow>('stitch_queue')).resolves.toEqual(
+          [],
+        );
+      });
+
+      if (databaseId.startsWith('POSTGRES')) {
+        it.each(['commit', 'rollback'] as const)(
+          'does not claim uncommitted processing work before %s',
+          async outcome => {
+            const { knex, db } = await createDatabase();
+            const entityRef = 'location:default/fakelocation';
+            await insertRefreshStateRow(knex, {
+              entity_id: id,
+              entity_ref: entityRef,
+              unprocessed_entity: '{}',
+              processed_entity: '{}',
+              errors: '[]',
+              next_update_at: '2021-04-01 13:37:00',
+              last_discovery_at: '2021-04-01 13:37:00',
+            });
+            await knex('stitch_queue').insert({
+              entity_ref: entityRef,
+              stitch_ticket: 'previous-request',
+              next_stitch_at: '1971-01-01T00:00:00.000',
+            });
+            let ready!: () => void;
+            const staged = new Promise<void>(resolve => {
+              ready = resolve;
+            });
+            let release!: () => void;
+            const released = new Promise<void>(resolve => {
+              release = resolve;
+            });
+            const processing = db.transaction(async tx => {
+              await db.updateProcessedEntity(tx, {
+                id,
+                processedEntity,
+                resultHash: 'new-result-hash',
+                relations: [],
+                deferredEntities: [],
+                refreshKeys: [],
+              });
+              await markForStitching({
+                knex: tx as Knex.Transaction,
+                entityRefs: [entityRef],
+              });
+              ready();
+              await released;
+              if (outcome === 'rollback') throw new Error('rollback');
+            });
+            // Attach rejection handling before coordinating concurrent work.
+            const settled = processing.then(
+              () => undefined,
+              error => error,
+            );
+            try {
+              await Promise.race([staged, processing]);
+              const claims = await knex.transaction(async tx => {
+                await tx.raw("set local statement_timeout = '2s'");
+                return getDeferredStitchableEntities({
+                  knex: tx,
+                  batchSize: 1,
+                  stitchTimeout: { minutes: 1 },
+                });
+              });
+              expect(claims).toEqual([]);
+              await expect(
+                knex('refresh_state').where('entity_id', id).first(),
+              ).resolves.toMatchObject({
+                processed_entity: '{}',
+                result_hash: null,
+              });
+            } finally {
+              release();
+              await settled;
+            }
+            expect(await settled).toEqual(
+              outcome === 'commit' ? undefined : new Error('rollback'),
+            );
+            const request = await knex('stitch_queue').first();
+            expect(request.stitch_ticket === 'previous-request').toBe(
+              outcome === 'rollback',
+            );
+            const [claim] = await getDeferredStitchableEntities({
+              knex,
+              batchSize: 1,
+              stitchTimeout: { minutes: 1 },
+            });
+            expect(claim.entityRef).toBe(entityRef);
+            expect(claim.stitchTicket).not.toBe(request.stitch_ticket);
+            await expect(
+              knex('refresh_state').where('entity_id', id).first(),
+            ).resolves.toMatchObject({
+              processed_entity:
+                outcome === 'commit' ? JSON.stringify(processedEntity) : '{}',
+              result_hash: outcome === 'commit' ? 'new-result-hash' : null,
+            });
+          },
+        );
+        it('recovers provider and processing transactions from a refresh-state/queue deadlock', async () => {
+          const { knex, db } = await createDatabase();
+          const provider = new DefaultProviderDatabase({
+            database: knex,
+            logger: defaultLogger,
+          });
+          const entities: Entity[] = ['a', 'b', 'c'].map(name => ({
+            apiVersion: 'backstage.io/v1alpha1',
+            kind: 'Component',
+            metadata: { name },
+          }));
+          await provider.transaction(tx =>
+            provider.replaceUnprocessedEntities(tx, {
+              type: 'full',
+              sourceKey: 'provider',
+              items: entities.map(entity => ({ entity })),
+            }),
+          );
+          const c = await knex<DbRefreshStateRow>('refresh_state')
+            .where('entity_ref', 'component:default/c')
+            .first();
+          const b = await knex<DbRefreshStateRow>('refresh_state')
+            .where('entity_ref', 'component:default/b')
+            .first();
+          await knex<DbRelationsRow>('relations').insert({
+            originating_entity_id: b!.entity_id,
+            source_entity_ref: 'component:default/b',
+            target_entity_ref: 'component:default/a',
+            type: 'dependsOn',
+          });
+          await knex<DbStitchQueueRow>('stitch_queue').insert({
+            entity_ref: 'component:default/b',
+            stitch_ticket: 'old-ticket',
+            next_stitch_at: knex.fn.now(),
+          });
+
+          let providerReady!: () => void;
+          let processingReady!: () => void;
+          const providerLockedQueue = new Promise<void>(resolve => {
+            providerReady = resolve;
+          });
+          const processingLockedRefresh = new Promise<void>(resolve => {
+            processingReady = resolve;
+          });
+          const attempts = { provider: 0, processing: 0 };
+          const input = { ...entities[2], spec: { input: 'new' } };
+          const output = { ...entities[2], spec: { output: 'new' } };
+
+          const results = await Promise.allSettled([
+            provider.transaction(async tx => {
+              attempts.provider++;
+              try {
+                // A mixed provider mutation removes first, then upserts. Split
+                // those phases only to coordinate the real database operations.
+                await provider.replaceUnprocessedEntities(tx, {
+                  type: 'delta',
+                  sourceKey: 'provider',
+                  removed: [{ entityRef: 'component:default/a' }],
+                  added: [],
+                });
+                providerReady();
+                if (attempts.provider === 1) {
+                  await processingLockedRefresh;
+                }
+                await provider.replaceUnprocessedEntities(tx, {
+                  type: 'delta',
+                  sourceKey: 'provider',
+                  removed: [],
+                  added: [{ entity: input }],
+                });
+              } finally {
+                providerReady();
+              }
+            }),
+            retryOnDeadlock(
+              () =>
+                db.transaction(async tx => {
+                  attempts.processing++;
+                  try {
+                    const { relationsChange } = await db.updateProcessedEntity(
+                      tx,
+                      {
+                        id: c!.entity_id,
+                        processedEntity: output,
+                        resultHash: 'new-result',
+                        errors: '[]',
+                        relations: [
+                          {
+                            source: {
+                              kind: 'Component',
+                              namespace: 'default',
+                              name: 'b',
+                            },
+                            target: {
+                              kind: 'Component',
+                              namespace: 'default',
+                              name: 'c',
+                            },
+                            type: 'dependsOn',
+                          },
+                        ],
+                        deferredEntities: [],
+                        refreshKeys: [],
+                      },
+                    );
+                    processingReady();
+                    if (attempts.processing === 1) {
+                      await providerLockedQueue;
+                    }
+                    await markForStitching({
+                      knex: tx as Knex.Transaction,
+                      entityRefs: [
+                        'component:default/c',
+                        ...relationsChange.inserted.map(
+                          r => r.source_entity_ref,
+                        ),
+                        ...relationsChange.deleted.map(
+                          r => r.source_entity_ref,
+                        ),
+                      ],
+                    });
+                  } finally {
+                    processingReady();
+                  }
+                }),
+              knex,
+            ),
+          ]);
+          expect(results).toEqual([
+            { status: 'fulfilled', value: undefined },
+            { status: 'fulfilled', value: undefined },
+          ]);
+          expect(Object.values(attempts).sort()).toEqual([1, 2]);
+          const rows = await knex<DbRefreshStateRow>('refresh_state').orderBy(
+            'entity_ref',
+          );
+          expect(rows.map(row => row.entity_ref)).toEqual([
+            'component:default/b',
+            'component:default/c',
+          ]);
+          expect(JSON.parse(rows[1].unprocessed_entity)).toEqual(input);
+          expect(JSON.parse(rows[1].processed_entity!)).toEqual(output);
+          expect(rows[1].result_hash).toBe('new-result');
+          expect(
+            await knex<DbRelationsRow>('relations')
+              .select('source_entity_ref', 'target_entity_ref', 'type')
+              .orderBy('target_entity_ref'),
+          ).toEqual([
+            {
+              source_entity_ref: 'component:default/b',
+              target_entity_ref: 'component:default/a',
+              type: 'dependsOn',
+            },
+            {
+              source_entity_ref: 'component:default/b',
+              target_entity_ref: 'component:default/c',
+              type: 'dependsOn',
+            },
+          ]);
+          const queued = await knex<DbStitchQueueRow>('stitch_queue').orderBy(
+            'entity_ref',
+          );
+          expect(queued.map(row => row.entity_ref)).toEqual([
+            'component:default/b',
+            'component:default/c',
+          ]);
+          expect(queued[0].stitch_ticket).not.toBe('old-ticket');
+        });
+      }
+
+      it.each(['success', 'errors'] as const)(
+        'rolls back %s persistence when stitch scheduling fails',
+        async result => {
+          const { knex, db } = await createDatabase();
+          await insertRefreshStateRow(knex, {
+            entity_id: id,
+            entity_ref: 'location:default/fakelocation',
+            unprocessed_entity: '{}',
+            processed_entity: '{}',
+            errors: '[]',
+            next_update_at: '2021-04-01 13:37:00',
+            last_discovery_at: '2021-04-01 13:37:00',
+          });
+
+          await expect(
+            db.transaction(async tx => {
+              if (result === 'success') {
+                await db.updateProcessedEntity(tx, {
+                  id,
+                  processedEntity,
+                  resultHash: 'new-result-hash',
+                  errors: '["processing error"]',
+                  relations: [],
+                  deferredEntities: [],
+                  refreshKeys: [],
+                });
+              } else {
+                await db.updateProcessedEntityErrors(tx, {
+                  id,
+                  processedEntity,
+                  relations: [],
+                  deferredEntities: [],
+                  refreshKeys: [],
+                  resultHash: 'new-result-hash',
+                  errors: '["processing error"]',
+                });
+              }
+              await expect(
+                (tx as Knex.Transaction)<DbRefreshStateRow>('refresh_state')
+                  .where({ entity_id: id })
+                  .first(),
+              ).resolves.toEqual(
+                expect.objectContaining({
+                  processed_entity:
+                    result === 'success'
+                      ? JSON.stringify(processedEntity)
+                      : '{}',
+                  result_hash: 'new-result-hash',
+                  errors: '["processing error"]',
+                }),
+              );
+              // Exercise a real enqueue failure: entity_ref is NOT NULL.
+              // The first chunk is valid, so its inserts must roll back too.
+              await markForStitching({
+                knex: tx as Knex.Transaction,
+                entityRefs: [
+                  ...Array.from(
+                    { length: 100 },
+                    (_, i) => `component:default/item-${i}`,
+                  ),
+                  null as unknown as string,
+                ],
+              });
+            }),
+          ).rejects.toMatchObject({
+            message: expect.stringMatching(/not[- ]null|cannot be null/i),
+          });
+
+          await expect(
+            knex<DbRefreshStateRow>('refresh_state')
+              .where({ entity_id: id })
+              .first(),
+          ).resolves.toEqual(
+            expect.objectContaining({
+              processed_entity: '{}',
+              result_hash: null,
+              errors: '[]',
+            }),
+          );
+          await expect(knex<DbStitchQueueRow>('stitch_queue')).resolves.toEqual(
+            [],
+          );
+        },
+      );
+
+      it('removes old relations and stores the new relationships', async () => {
+        const { knex, db } = await createDatabase();
         await insertRefreshStateRow(knex, {
           entity_id: id,
           entity_ref: 'location:default/fakelocation',
@@ -251,7 +676,16 @@ describe('DefaultProcessingDatabase', () => {
           type: 'memberOf',
           target_entity_ref: 'component:default/foo',
         });
-        expect(updateResult.previous.relations).toEqual([]);
+        expect(updateResult.relationsChange).toEqual({
+          deleted: [],
+          inserted: [
+            {
+              source_entity_ref: 'component:default/foo',
+              type: 'memberOf',
+              target_entity_ref: 'component:default/foo',
+            },
+          ],
+        });
 
         updateResult = await db.transaction(tx =>
           db.updateProcessedEntity(tx, {
@@ -274,21 +708,15 @@ describe('DefaultProcessingDatabase', () => {
           type: 'memberOf',
           target_entity_ref: 'component:default/foo',
         });
-        expect(updateResult.previous.relations).toEqual([
-          {
-            originating_entity_id: expect.any(String),
-            source_entity_ref: 'component:default/foo',
-            type: 'memberOf',
-            target_entity_ref: 'component:default/foo',
-          },
-        ]);
-      },
-    );
+        // Same relations as before — no changes
+        expect(updateResult.relationsChange).toEqual({
+          deleted: [],
+          inserted: [],
+        });
+      });
 
-    it.each(databases.eachSupportedId())(
-      'adds deferred entities to the refresh_state table to be picked up later, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('adds deferred entities to the refresh_state table to be picked up later', async () => {
+        const { knex, db } = await createDatabase();
         await insertRefreshStateRow(knex, {
           entity_id: id,
           entity_ref: 'location:default/fakelocation',
@@ -330,19 +758,15 @@ describe('DefaultProcessingDatabase', () => {
           .select();
 
         expect(refreshStateEntries).toHaveLength(1);
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'updates unprocessed entities with varying location keys, %p',
-      async databaseId => {
+      it('updates unprocessed entities with varying location keys', async () => {
         const mockLogger = {
           debug: jest.fn(),
           error: jest.fn(),
           warn: jest.fn(),
         };
         const { knex, db } = await createDatabase(
-          databaseId,
           mockLogger as unknown as Logger,
         );
 
@@ -479,19 +903,15 @@ describe('DefaultProcessingDatabase', () => {
             expect(mockLogger.error).not.toHaveBeenCalled();
           }
         });
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'stores the refresh keys for the entity where key length is 255 chars or less',
-      async databaseId => {
+      it('stores the refresh keys for the entity where key length is 255 chars or less', async () => {
         const mockLogger = {
           debug: jest.fn(),
           error: jest.fn(),
           warn: jest.fn(),
         };
         const { knex, db } = await createDatabase(
-          databaseId,
           mockLogger as unknown as Logger,
         );
         await insertRefreshStateRow(knex, {
@@ -536,19 +956,15 @@ describe('DefaultProcessingDatabase', () => {
           entity_id: id,
           key: 'protocol:foo-bar.com',
         });
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'stores the refresh keys for the entity where key length is greater than 255 chars',
-      async databaseId => {
+      it('stores the refresh keys for the entity where key length is greater than 255 chars', async () => {
         const mockLogger = {
           debug: jest.fn(),
           error: jest.fn(),
           warn: jest.fn(),
         };
         const { knex, db } = await createDatabase(
-          databaseId,
           mockLogger as unknown as Logger,
         );
         await insertRefreshStateRow(knex, {
@@ -597,15 +1013,12 @@ describe('DefaultProcessingDatabase', () => {
           entity_id: id,
           key: `url:https://example.com/foo-bar-test-group/very-long-group-name-that-exceeds-255-characters-just-to-test-the-limits-of-url-length-in-the-catalog-info-yaml-file-and-see-how-the-back#sha256:edfb606500d184900e63891e5279d35bf0069ea251e90d15c0a430de6023d905`,
         });
-      },
-    );
-  });
+      });
+    });
 
-  describe('updateEntityCache', () => {
-    it.each(databases.eachSupportedId())(
-      'updates the entityCache, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+    describe('updateEntityCache', () => {
+      it('updates the entityCache', async () => {
+        const { knex, db } = await createDatabase();
         const id = '123';
         await insertRefreshStateRow(knex, {
           entity_id: id,
@@ -644,15 +1057,12 @@ describe('DefaultProcessingDatabase', () => {
         ).select();
         expect(entities2.length).toBe(1);
         expect(entities2[0].cache).toEqual('{}');
-      },
-    );
-  });
+      });
+    });
 
-  describe('getProcessableEntities', () => {
-    it.each(databases.eachSupportedId())(
-      'should return entities to process, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+    describe('getProcessableEntities', () => {
+      it('should return entities to process', async () => {
+        const { knex, db } = await createDatabase();
         const entity = JSON.stringify({
           kind: 'Location',
           apiVersion: '1.0.0',
@@ -696,13 +1106,10 @@ describe('DefaultProcessingDatabase', () => {
             }),
           ).resolves.toEqual({ items: [] });
         });
-      },
-    );
+      });
 
-    it.each(databases.eachSupportedId())(
-      'should update the next_refresh interval with a timestamp that includes refresh spread, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should update the next_refresh interval with a timestamp that includes refresh spread', async () => {
+        const { knex, db } = await createDatabase();
         const entity = JSON.stringify({
           kind: 'Location',
           apiVersion: '1.0.0',
@@ -731,33 +1138,30 @@ describe('DefaultProcessingDatabase', () => {
         const nextUpdate = timestampToDateTime(result[0].next_update_at);
         const nextUpdateDiff = nextUpdate.diff(now, 'seconds');
         expect(nextUpdateDiff.seconds).toBeGreaterThanOrEqual(90);
-      },
-    );
-  });
+      });
+    });
 
-  describe('listParents', () => {
-    let nextId = 1;
-    function makeEntity(ref: string) {
-      return {
-        entity_id: String(nextId++),
-        entity_ref: ref,
-        unprocessed_entity: JSON.stringify({
-          kind: 'Location',
-          apiVersion: '1.0.0',
-          metadata: {
-            name: 'xyz',
-          },
-        }),
-        errors: '[]',
-        next_update_at: '2019-01-01 23:00:00',
-        last_discovery_at: '2021-04-01 13:37:00',
-      };
-    }
+    describe('listParents', () => {
+      let nextId = 1;
+      function makeEntity(ref: string) {
+        return {
+          entity_id: String(nextId++),
+          entity_ref: ref,
+          unprocessed_entity: JSON.stringify({
+            kind: 'Location',
+            apiVersion: '1.0.0',
+            metadata: {
+              name: 'xyz',
+            },
+          }),
+          errors: '[]',
+          next_update_at: '2019-01-01 23:00:00',
+          last_discovery_at: '2021-04-01 13:37:00',
+        };
+      }
 
-    it.each(databases.eachSupportedId())(
-      'should return parents, %p',
-      async databaseId => {
-        const { knex, db } = await createDatabase(databaseId);
+      it('should return parents', async () => {
+        const { knex, db } = await createDatabase();
 
         await knex<DbRefreshStateRow>('refresh_state').insert(
           makeEntity('location:default/root-1'),
@@ -803,7 +1207,7 @@ describe('DefaultProcessingDatabase', () => {
           db.listParents(tx, { entityRefs: ['location:default/root-2'] }),
         );
         expect(result3.entityRefs).toEqual([]);
-      },
-    );
-  });
-});
+      });
+    });
+  },
+);
